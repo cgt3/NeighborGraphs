@@ -15,5 +15,7 @@ end
 tree = kdTree(x, num_leaf_pts = 4);
 
 
-p = plotPartitions(tree)
-p = plotPartitions(tree, watertight=false)
+p = partitionPlot(tree)
+p = partitionPlot(tree, watertight=false)
+
+p = treePlot(tree)

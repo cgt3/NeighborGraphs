@@ -2,11 +2,27 @@
 module kdTrees
 
     using Plots
+    using Printf
 
-    export BoundingVolume
-    export kdTree, kdNode, search, plotPartitions
+    # Data types
+    export BoundingVolume, kdNode,  kdTree
 
-    DEFAULT_NUM_LEAF_PTS=40
+    # Constucting methods
+    export getSplit
+
+    # Processing methods
+    export contains, getContainingNode, getLeaves, partitionPlot, treePlot
+
+    const DEFAULT_NUM_LEAF_PTS = 40
+    const DEFAULT_PT_TOL = 1e-12
+
+    const DEFAULT_PLOT_WIDTH_PER_NODE = 100
+    const DEFAULT_PLOT_HEIGHT_PER_NODE = 200
+    const DEFAULT_LEAF_FONTSIZE = 8
+    const DEFAULT_MAX_TREE_PLOT_FONTSIZE = 20
+
+
+    const DEFAULT_PARTITION_PALETTE = palette(:RdYlBu_10) # palette([])
 
     struct BoundingVolume{T}
         min::T
@@ -71,8 +87,10 @@ module kdTrees
         kdNode(data, is_leaf, i0, n, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth) = new(data, is_leaf, i0, n, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth)
 
         # The recursive, top-level constructor
-        function kdNode(data::AbstractArray; parent=nothing, i0=1, n=length(data), depth=0, num_leaf_pts=DEFAULT_NUM_LEAF_PTS)
-            if n <= num_leaf_pts 
+        function kdNode(data::AbstractArray; parent=nothing::Union{kdNode, Nothing}, i0=1::Integer, n=length(data)::Integer, depth=0::Integer, num_leaf_pts=DEFAULT_NUM_LEAF_PTS::Integer)
+            if n == 0
+                return nothing
+            elseif n <= num_leaf_pts 
                 bv = BoundingVolume(data, i0, n)
                 bv_wt = getWatertightBoundingVolume(parent, data, i0, n)
                 return kdNode(data, true, i0, n, 0, NaN, bv, bv_wt, parent, nothing, nothing, depth)
@@ -126,6 +144,7 @@ module kdTrees
         end
     end
 
+    # TODO: change this function to allow different schemes for choosing the split value
     function getSplit(bv::BoundingVolume, bv_wt::BoundingVolume, data, i0, n)
         centroid = getCentroid(bv, data, i0, n)
         # mid = 0.5 * (bv.max - bv.min) + bv.min
@@ -175,35 +194,132 @@ module kdTrees
         return i_start
     end
 
+    struct kdTree
+        root::kdNode
+        max_depth::Integer
+        num_leaves::Integer
+        num_pts::Integer
 
-    # User-exposed functions -------------------------------------------------------------
-    function kdTree(data; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS)
-        return kdNode(data, num_leaf_pts=num_leaf_pts)
-    end
+        function kdTree(data; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS)
+            root = kdNode(data, num_leaf_pts=num_leaf_pts)
+            max_depth, num_leaves, num_pts = getTreeStats(root)
 
-
-    function search(query_pt, kd_node::kdNode)
-        if kd_node.is_leaf == true
-            return kd_node
-        elseif query_pt[kd_node.split_dim] <= kd_node.split_val
-            return search(query_pt, kd_node.l_child)
-        else
-            return search(query_pt, kd_node.r_child)
+            return new(root, max_depth, num_leaves, num_pts)
         end
     end
 
-    function plotTree(tree::kdNode)
+    function getTreeStats(node::Union{kdNode, Nothing})
+        if isnothing(node)
+            return 0, 0, 0
+        elseif node.is_leaf
+            return node.depth, 1, node.n
+        else
+            depth_L, num_leaves_L, num_pts_L = getTreeStats(node.l_child)
+            depth_R, num_leaves_R, num_pts_R = getTreeStats(node.r_child)
+
+            return max(depth_L, depth_R), num_leaves_L + num_leaves_R, num_pts_L + num_pts_R
+        end
     end
 
-    function plotTree!(node::kdNode)
+    # User-exposed functions -------------------------------------------------------------
+    function getContainingNode(query_pt, tree::kdTree; pt_tol=DEFAULT_NUM_LEAF_PTS)
+        return getContainingNode(query_pt, tree.root, pt_tol=pt_tol)
     end
 
-    function plotPartitions(tree::kdNode; 
-        watertight=true,
-        index=(1,2), 
+    function getContainingNode(query_pt, node::Union{kdNode, Nothing}; pt_tol=DEFAULT_PT_TOL)
+        if isnothing(kd_node)
+            return nothing
+        elseif node.depth == 0 # Check if the point in question is even in the tree's BV
+            if any(query_pt .- node.bv_watertight.max .> pt_tol) || any( query_pt .- node.bv_watertight.min .< pt_tol)
+                return nothing
+            end
+        end
+
+        if node.is_leaf == true
+            return node
+        elseif query_pt[kd_node.split_dim] <= node.split_val
+            return getContainingNode(query_pt, node.l_child, pt_tol=pt_tol)
+        else
+            return getContainingNode(query_pt, node.r_child, pt_tol=pt_tol)
+        end
+    end
+
+    function contains(query_pt, tree::kdTree; pt_tol=DEFAULT_PT_TOL)
+        node = getContainingNode(query_pt, tree.root, pt_tol=pt_tol)
+        return contains(query_pt, node, pt_tol=pt_tol)
+    end
+
+    function contains(query_pt, node::Union{kdNode, Nothing}; pt_tol=DEFAULT_PT_TOL)
+        if isnothing(node)
+            return false
+        end
+
+        i_end = node.i0 + node.n - 1
+        for i = i0:i_end 
+            if all(abs.(query_pt .- node.data[i])) .< pt_tol
+                return true
+            end
+        end
+
+        return false
+    end
+
+    function treePlot(tree::kdTree;
+        x_spacing=DEFAULT_PLOT_WIDTH_PER_NODE,
+        y_spacing=DEFAULT_PLOT_HEIGHT_PER_NODE,
+        leaf_fontsize=DEFAULT_LEAF_FONTSIZE,
+        max_fontsize=DEFAULT_MAX_TREE_PLOT_FONTSIZE)
+
+        p = plot(
+            size=( x_spacing*(2^tree.max_depth + 1), y_spacing*(tree.max_depth + 3) ), 
+            ylims=(-1, tree.max_depth + 1), 
+            xlims=(0, 2^tree.max_depth + 1),
+            axis=([], false),
+            legend=false,
+            rmargin=0Plots.px,
+            lmargin=0Plots.px
+            )
+        yflip!(true)
+        treePlot!(p, 1, tree.max_depth, tree.root, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
+        return p
+    end
+
+    function treePlot!(p, i_level::Integer, max_depth::Integer, node::Union{kdNode, Nothing}; 
+        leaf_fontsize=DEFAULT_TREE_PLOT_FONTSIZE,
+        max_fontsize=DEFAULT_MAX_TREE_PLOT_FONTSIZE )
+
+        x_pos = 0.5 + (i_level - 0.5)*( 2^(max_depth - node.depth) )
+        y_pos = node.depth
+        
+        fontsize = min(leaf_fontsize + 2*(max_depth - node.depth), max_fontsize)
+
+        if isnothing(node)
+            annotate!(p, x_pos, y_pos, text("(empty leaf)", :center, fontsize))
+        elseif !node.is_leaf
+            # Plot lines to child nodes
+            x_spacing = 2^(max_depth - node.depth)
+            x_pos_L, x_pos_R = x_pos - x_spacing/4 , x_pos + x_spacing / 4
+            y_pos_child = y_pos + 1
+            plot!(p, [x_pos, x_pos_L], [y_pos, y_pos_child], linecolor=:black, linewidth=3)
+            plot!(p, [x_pos, x_pos_R], [y_pos, y_pos_child], linecolor=:black, linewidth=3)
+
+            # Add text for this node
+            annotate!(p, x_pos, y_pos, text(@sprintf("Split dim: %d\nVal: %.4e", node.split_dim, node.split_val), :center, fontsize))
+
+
+            treePlot!(p, 2*i_level - 1, max_depth, node.l_child, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
+            treePlot!(p, 2*i_level,     max_depth, node.r_child, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
+        else
+            annotate!(p, x_pos, y_pos, text("Leaf: i0=$(node.i0),\n n=$(node.n)", :center, fontsize))
+        end
+    end
+
+    function partitionPlot(tree::kdTree; 
         size=(1500,1000), 
         fontsize=20,
-        color_palette=palette(:RdYlBu_10), # TODO: create a custom palette for plotting partitions
+        index=(1,2), 
+        watertight=true,
+        color_palette=DEFAULT_PARTITION_PALETTE,
         linewidth=4)
 
         p = plot(size=size,
@@ -211,17 +327,20 @@ module kdTrees
             ytickfont=font(fontsize),
             leg=:false
         )
-        plotPartitions!(p, tree, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
+        partitionPlot!(p, tree.root, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
         return p
     end
 
     # TODO: adapt to plot 1D points as well
-    function plotPartitions!(p, node::kdNode; index=(1,2),
-            watertight,
-            color_palette,
-            linewidth)
+    function partitionPlot!(p, node::Union{kdNode, Nothing}; 
+            index=(1,2),
+            watertight=true,
+            color_palette=DEFAULT_PARTITION_PALETTE,
+            linewidth=4)
 
-        if node.is_leaf
+        if isnothing(node)
+            return
+        elseif node.is_leaf
             i_end = node.i0 + node.n - 1
             scatter!(p, getindex.(node.data[node.i0:i_end], index[1]), getindex.(node.data[node.i0:i_end], index[2]), markercolor=color_palette[1], ms=5)
         else
@@ -247,17 +366,27 @@ module kdTrees
                 plot!(p, [split_bv.min[index[1]], split_bv.max[index[1]]], node.split_val*[1, 1], linecolor=color_palette[i_color], linewidth=linewidth)
             end
 
-            plotPartitions!(p, node.l_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
-            plotPartitions!(p, node.r_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
+            partitionPlot!(p, node.l_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
+            partitionPlot!(p, node.r_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
         end
     end
 
 
-    function getLeaves(tree::kdNode)
+    function getLeaves(tree::kdTree)
+        leaves = kdNode[]
+        getLeaves!(leaves, tree.root)
 
+        return leaves
     end
 
-    function getLeaves!(node::kdNode)
-
+    function getLeaves!(leaves, node::Union{kdNode, Nothing})
+        if isnothing(node)
+            return
+        elseif node.is_leaf
+            push!(leaves, node)
+        else
+            getLeaves!(leaves, node.l_child)
+            getLeaves!(leaves, node.r_child)
+        end
     end
 end # kdTree module
