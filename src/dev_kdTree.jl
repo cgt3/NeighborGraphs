@@ -12,10 +12,12 @@ for i = 1:num_pts
 end
 
 
-tree = kdTree(x, num_leaf_pts = 4);
+tree = kdTree(x, num_leaf_pts = 10);
 
+
+p = treePlot(tree, plot_text=false)
 
 p = partitionPlot(tree)
-p = partitionPlot(tree, watertight=false)
+display(p)
+# p = partitionPlot(tree, watertight=false)
 
-p = treePlot(tree)

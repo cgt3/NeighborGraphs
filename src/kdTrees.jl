@@ -19,10 +19,19 @@ module kdTrees
     const DEFAULT_PLOT_WIDTH_PER_NODE = 100
     const DEFAULT_PLOT_HEIGHT_PER_NODE = 200
     const DEFAULT_LEAF_FONTSIZE = 8
-    const DEFAULT_MAX_TREE_PLOT_FONTSIZE = 20
+    const DEFAULT_MAX_TREE_PLOT_FONTSIZE = 24
+
+    const MIN_POINT_PLOT_SIZE = 2
+    const MAX_POINT_PLOT_SIZE = 16
+    const MIN_SPLIT_LINE_WIDTH = 3
+    const MAX_SPLIT_LINE_WIDTH = 10
+    const TREE_MARKER_SIZE = 20
 
 
-    const DEFAULT_PARTITION_PALETTE = palette(:RdYlBu_10) # palette([])
+    const DEFAULT_PARTITION_PALETTE = palette([:darkred,       :orangered3,  :darkorange2, :goldenrod1,
+                                               :chartreuse3,   :forestgreen, :darkgreen,      #:olivedrab2
+                                               :navy,          :blue, :deepskyblue,    #:blue
+                                               :mediumpurple1, :purple3,     :purple4  ])     #:purple1
 
     struct BoundingVolume{T}
         min::T
@@ -267,6 +276,7 @@ module kdTrees
     function treePlot(tree::kdTree;
         x_spacing=DEFAULT_PLOT_WIDTH_PER_NODE,
         y_spacing=DEFAULT_PLOT_HEIGHT_PER_NODE,
+        plot_text=true,
         leaf_fontsize=DEFAULT_LEAF_FONTSIZE,
         max_fontsize=DEFAULT_MAX_TREE_PLOT_FONTSIZE)
 
@@ -280,21 +290,26 @@ module kdTrees
             lmargin=0Plots.px
             )
         yflip!(true)
-        treePlot!(p, 1, tree.max_depth, tree.root, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
+        treePlot!(p, 1, tree.max_depth, tree.root, plot_text=plot_text, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
         return p
     end
 
     function treePlot!(p, i_level::Integer, max_depth::Integer, node::Union{kdNode, Nothing}; 
+        plot_text=true,
         leaf_fontsize=DEFAULT_TREE_PLOT_FONTSIZE,
         max_fontsize=DEFAULT_MAX_TREE_PLOT_FONTSIZE )
 
         x_pos = 0.5 + (i_level - 0.5)*( 2^(max_depth - node.depth) )
         y_pos = node.depth
-        
+
         fontsize = min(leaf_fontsize + 2*(max_depth - node.depth), max_fontsize)
 
         if isnothing(node)
-            annotate!(p, x_pos, y_pos, text("(empty leaf)", :center, fontsize))
+            if plot_text
+                annotate!(p, x_pos, y_pos, text("(empty leaf)", :center, fontsize))
+            else
+                scatter!(p, [x_pos], [y_pos], markercolor=:gray80, markerstrokewidth=0, markersize=TREE_MARKER_SIZE)
+            end
         elseif !node.is_leaf
             # Plot lines to child nodes
             x_spacing = 2^(max_depth - node.depth)
@@ -304,13 +319,20 @@ module kdTrees
             plot!(p, [x_pos, x_pos_R], [y_pos, y_pos_child], linecolor=:black, linewidth=3)
 
             # Add text for this node
-            annotate!(p, x_pos, y_pos, text(@sprintf("Split dim: %d\nVal: %.4e", node.split_dim, node.split_val), :center, fontsize))
+            if plot_text
+                annotate!(p, x_pos, y_pos, text(@sprintf("Split dim: %d\nVal: %.4e", node.split_dim, node.split_val), :center, fontsize))
+            else
+                scatter!(p, [x_pos], [y_pos], markercolor=:black, markerstrokewidth=0, markersize=TREE_MARKER_SIZE)
+            end
 
-
-            treePlot!(p, 2*i_level - 1, max_depth, node.l_child, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
-            treePlot!(p, 2*i_level,     max_depth, node.r_child, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
+            treePlot!(p, 2*i_level - 1, max_depth, node.l_child, plot_text=plot_text, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
+            treePlot!(p, 2*i_level,     max_depth, node.r_child, plot_text=plot_text, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
         else
-            annotate!(p, x_pos, y_pos, text("Leaf: i0=$(node.i0),\n n=$(node.n)", :center, fontsize))
+            if plot_text
+                annotate!(p, x_pos, y_pos, text("Leaf: i0=$(node.i0),\n n=$(node.n)", :center, fontsize))
+            else
+                scatter!(p, [x_pos], [y_pos], markercolor=:red, markerstrokewidth=0, markersize=TREE_MARKER_SIZE)
+            end
         end
     end
 
@@ -342,9 +364,21 @@ module kdTrees
             return
         elseif node.is_leaf
             i_end = node.i0 + node.n - 1
-            scatter!(p, getindex.(node.data[node.i0:i_end], index[1]), getindex.(node.data[node.i0:i_end], index[2]), markercolor=color_palette[1], ms=5)
+            markersize = max(MAX_POINT_PLOT_SIZE - 1.5*node.depth, MIN_POINT_PLOT_SIZE)
+            scatter!(p, getindex.(node.data[node.i0:i_end], index[1]), getindex.(node.data[node.i0:i_end], index[2]), 
+                markercolor=:darkgrey, markerstrokewidth=0, markersize=markersize, markeralpha=0.75)
         else
             i_color = node.depth % length(color_palette) + 1
+
+            if watertight 
+                split_bv = node.bv_watertight
+            else
+                split_bv = node.bv 
+            end
+
+            partitionPlot!(p, node.l_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
+            partitionPlot!(p, node.r_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
+
             if !watertight || node.depth == 0
                 # Plot the parent BV:
                 plot!(p, node.bv.min[index[1]]*[1, 1], [node.bv.min[index[2]], node.bv.max[index[2]]], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # left
@@ -353,21 +387,12 @@ module kdTrees
                 plot!(p, [node.bv.min[index[1]], node.bv.max[index[1]]], node.bv.max[index[2]]*[1, 1], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # top
             end
 
-            if watertight 
-                split_bv = node.bv_watertight
-            else
-                split_bv = node.bv 
-            end
-
             # Plot the splitting plane
             if node.split_dim == index[1]
-                plot!(p, node.split_val*[1, 1], [split_bv.min[index[2]], split_bv.max[index[2]]], linecolor=color_palette[i_color], linewidth=linewidth)
+                plot!(p, node.split_val*[1, 1], [split_bv.min[index[2]], split_bv.max[index[2]]], linecolor=color_palette[i_color], linewidth=max(MIN_SPLIT_LINE_WIDTH, MAX_SPLIT_LINE_WIDTH - node.depth))
             elseif node.split_dim == index[2]
-                plot!(p, [split_bv.min[index[1]], split_bv.max[index[1]]], node.split_val*[1, 1], linecolor=color_palette[i_color], linewidth=linewidth)
+                plot!(p, [split_bv.min[index[1]], split_bv.max[index[1]]], node.split_val*[1, 1], linecolor=color_palette[i_color], linewidth=max(MIN_SPLIT_LINE_WIDTH, MAX_SPLIT_LINE_WIDTH - node.depth))
             end
-
-            partitionPlot!(p, node.l_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
-            partitionPlot!(p, node.r_child, watertight=watertight, index=index, color_palette=color_palette, linewidth=linewidth)
         end
     end
 
