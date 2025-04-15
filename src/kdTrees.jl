@@ -1,17 +1,8 @@
-
 module kdTrees
 
+    using LinearAlgebra
     using Plots
     using Printf
-
-    # Data types
-    export BoundingVolume, kdNode,  kdTree
-
-    # Constucting methods
-    export getSplit
-
-    # Processing methods
-    export contains, getContainingNode, getLeaves, partitionPlot, treePlot
 
     const DEFAULT_NUM_LEAF_PTS = 40
     const DEFAULT_PT_TOL = 1e-12
@@ -30,59 +21,94 @@ module kdTrees
 
     const DEFAULT_PARTITION_PALETTE = palette([:darkred,       :orangered3,  :darkorange2, :goldenrod1,
                                                :chartreuse3,   :forestgreen, :darkgreen,      #:olivedrab2
-                                               :navy,          :blue, :deepskyblue,    #:blue
+                                               :navy,          :blue,        :deepskyblue,    #:blue
                                                :mediumpurple1, :purple3,     :purple4  ])     #:purple1
 
-    struct BoundingVolume{T}
-        min::T
-        max::T
+                            
+    # Data types
+    export Ball, Cone, BoundingVolume, kdNode,  kdTree, DataPoint, IndexRange
+
+    # Functions
+    export spatial2Data, getSplit, contains, getContainingNode, getLeaves, partitionPlot, treePlot
+
+
+    struct DataPoint
+        x::AbstractVector
+        y
     end
 
-    function BoundingVolume(data::Vector{T}, i0, n) where T <:Number
-        max = copy(data[i0])
-        min = copy(data[i0])
-        for i = i0:i0+n-1
-            if max .< data[i]
-                max = data[i]
+    function spatial2Data(data_num::Vector{Vector{T}}) where T <: Real
+        return DataPoint.(data_num, nothing)
+    end
+
+
+    function Base.getindex(p::DataPoint, i::Integer)
+        return p.x[i]
+    end
+
+
+    # TODO: there is most definitely something in Julia that replicates the below, but if
+    #     there is true need to also have n and not just i0,in, than it may be ok to keep.
+    struct IndexRange
+        first::Integer
+        last::Integer
+        n::Integer
+
+        IndexRange(first; last) = new(first, last, last - first + 1)
+        IndexRange(first; n) = new(first, first + n - 1, n)
+    end
+
+    # Geometric primitives
+    struct Ball
+        center
+        radius::Real
+        p::Real
+    end
+
+    struct BoundingVolume
+        min::AbstractArray
+        max::AbstractArray
+        is_empty::Bool
+
+        function BoundingVolume()
+            return new(Inf, -Inf, true)
+        end
+
+        function BoundingVolume(min, max)
+            if any(min .> max)
+                @error "kdTree::BoundingVolume: Cannot construct bounding volume with min (=$min) > max (=$max)"
+            elseif length(min) != length(max)
+                @error "kdTree::BoundingVolume: length(min) = $(length(min)) != length(max) = $(length(max))"
             end
 
-            if min .> data[i]
-                min = data[i]
-            end
+            return new(min, max, false)
+        end
+    end
+
+    function BoundingVolume(ball::Ball)
+        return BoundingVolume(ball.center .- ball.radius, ball.center .+ radius)
+    end
+
+    function BoundingVolume(data::Vector{DataPoint}, index_range::IndexRange)
+        max = copy(data[index_range.first].x)
+        min = copy(data[index_range.first].x)
+        for i = index_range.first:index_range.last
+            d_max = max .< data[i].x
+            max[d_max] = data[i].x[d_max]
+
+            d_min = min .> data[i].x
+            min[d_min] = data[i].x[d_min]
         end
         return BoundingVolume(min, max)
     end
 
-    function BoundingVolume(data, i0, n)
-        max = copy(data[i0])
-        min = copy(data[i0])
-        for i = i0:i0+n-1
-            d_max = max .< data[i]
-            max[d_max] = data[i][d_max]
-
-            d_min = min .> data[i]
-            min[d_min] = data[i][d_min]
-        end
-        return BoundingVolume(min, max)
-    end
-
-    function getCentroid(bv::BoundingVolume, data, i0, n)
-        # TODO: will not work for 1D data
-        centroid = zeros(eltype(data[1]), size(data[1]))
-        for i in i0:i0+n-1
-            centroid += data[i]
-        end
-        centroid *= 1/n
-
-        return centroid
-    end
 
     # Convention: use <= goes to the left, > goes to the right
     mutable struct kdNode
-        data::AbstractArray
+        data::Vector{DataPoint}
+        original_indices::Vector{Int64}
         is_leaf::Bool
-        i0::Integer
-        n::Integer
+        index_range::IndexRange
         split_dim::Integer
         split_val::Real
         bv::BoundingVolume
@@ -93,55 +119,72 @@ module kdTrees
         depth::Integer
 
         # Default constructor
-        kdNode(data, is_leaf, i0, n, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth) = new(data, is_leaf, i0, n, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth)
+        kdNode(data, original_indices, is_leaf, index_range, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth) = 
+            new(data, original_indices, is_leaf, index_range, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth)
 
         # The recursive, top-level constructor
-        function kdNode(data::AbstractArray; parent=nothing::Union{kdNode, Nothing}, i0=1::Integer, n=length(data)::Integer, depth=0::Integer, num_leaf_pts=DEFAULT_NUM_LEAF_PTS::Integer)
-            if n == 0
+        function kdNode(data::Vector{DataPoint}; original_indices=[1:length(data)...]::Vector{Int64}, 
+                  parent = nothing::Union{kdNode, Nothing}, 
+             index_range = IndexRange(1, n=length(data))::IndexRange, 
+                   depth = 0::Integer, 
+            num_leaf_pts = DEFAULT_NUM_LEAF_PTS::Integer)
+
+            if index_range.n == 0
                 return nothing
-            elseif n <= num_leaf_pts 
-                bv = BoundingVolume(data, i0, n)
-                bv_wt = getWatertightBoundingVolume(parent, data, i0, n)
-                return kdNode(data, true, i0, n, 0, NaN, bv, bv_wt, parent, nothing, nothing, depth)
+            elseif index_range.n <= num_leaf_pts 
+                bv = BoundingVolume(data, index_range)
+                bv_wt = getWatertightBoundingVolume(parent, data, index_range)
+                return kdNode(data, original_indices, true, index_range, 0, NaN, bv, bv_wt, parent, nothing, nothing, depth)
             end
 
             node = new()
             node.data = data
+            node.original_indices = original_indices
             node.is_leaf = false
-            node.i0 = i0
-            node.n = n
+            node.index_range = index_range
             node.depth=depth
 
-            node.bv = BoundingVolume(data, i0, n)
-            node.bv_watertight = getWatertightBoundingVolume(parent, data, i0, n)
+            node.bv = BoundingVolume(data, index_range)
+            node.bv_watertight = getWatertightBoundingVolume(parent, data, index_range)
 
             # Find the splitting dimension and value
-            node.split_dim, node.split_val = getSplit(node.bv, node.bv_watertight, data, i0, n)
+            node.split_dim, node.split_val = getSplit(node.bv, node.bv_watertight, data, index_range)
 
             # Partition the data
-            i_split = partitionData!(data, i0, n, node.split_dim, node.split_val)
+            i_split = partitionData!(data, original_indices, index_range, node.split_dim, node.split_val)
 
             # For the children nodes
-            i0_left  = node.i0
+            i0_left  = node.index_range.first
             i0_right = i_split + 1
-            n_left = i_split - node.i0 + 1
-            n_right = node.n - n_left 
+            n_left = i_split - i0_left + 1
+            n_right = node.index_range.n - n_left 
 
             # Attach family nodes
             node.parent = parent
-            node.l_child = kdNode(data, parent=node, i0=i0_left,  n=n_left,  depth=depth+1, num_leaf_pts=num_leaf_pts)
-            node.r_child = kdNode(data, parent=node, i0=i0_right, n=n_right, depth=depth+1, num_leaf_pts=num_leaf_pts)
+            node.l_child = kdNode(data, original_indices=original_indices, parent=node, index_range=IndexRange(i0_left,  n=n_left),  depth=depth+1, num_leaf_pts=num_leaf_pts)
+            node.r_child = kdNode(data, original_indices=original_indices, parent=node, index_range=IndexRange(i0_right, n=n_right), depth=depth+1, num_leaf_pts=num_leaf_pts)
             return node
         end
     end # kdNode struct declaration
 
 
-    function getWatertightBoundingVolume(parent::Union{kdNode, Nothing}, data, i0::Integer, n::Integer)
+    function getCentroid(bv::BoundingVolume, data::Vector{DataPoint}, index_range::IndexRange)
+        x0 = data[1].x
+        centroid = zeros(eltype(x0), size(x0))
+        for i in index_range.first:index_range.last
+            centroid += data[i].x
+        end
+        centroid *= 1/index_range.n
+
+        return centroid
+    end
+
+    function getWatertightBoundingVolume(parent::Union{kdNode, Nothing}, data, index_range::IndexRange)
         if isnothing(parent)
-            return BoundingVolume(data, i0, n)
+            return BoundingVolume(data, index_range)
         else
             parent_bv = parent.bv_watertight
-            if parent.i0 == i0 # we are constructing the left child
+            if parent.index_range.first == index_range.first # we are constructing the left child
                 bv_max = copy(parent_bv.max)
                 bv_max[parent.split_dim] = parent.split_val
                 return  BoundingVolume(copy(parent_bv.min), bv_max)
@@ -154,8 +197,8 @@ module kdTrees
     end
 
     # TODO: change this function to allow different schemes for choosing the split value
-    function getSplit(bv::BoundingVolume, bv_wt::BoundingVolume, data, i0, n)
-        centroid = getCentroid(bv, data, i0, n)
+    function getSplit(bv::BoundingVolume, bv_wt::BoundingVolume, data, index_range::IndexRange)
+        centroid = getCentroid(bv, data, index_range)
         # mid = 0.5 * (bv.max - bv.min) + bv.min
         # dist = centroid - mid
 
@@ -172,9 +215,9 @@ module kdTrees
     end
 
 
-    function partitionData!(data, i0, n, split_dim, split_val)
-        i_start = i0
-        i_end = i0 + n - 1
+    function partitionData!(data::Vector{DataPoint}, original_indices, index_range::IndexRange, split_dim, split_val)
+        i_start = index_range.first
+        i_end = index_range.last
 
         while i_start < i_end 
             is_valid_L = data[i_start][split_dim] <= split_val
@@ -184,6 +227,10 @@ module kdTrees
                 swap          = data[i_end]
                 data[i_end]   = data[i_start]
                 data[i_start] = swap
+
+                swap = original_indices[i_end]
+                original_indices[i_end]   = original_indices[i_start]
+                original_indices[i_start] = swap
             end
 
             if is_valid_L && !is_valid_R
@@ -204,16 +251,19 @@ module kdTrees
     end
 
     struct kdTree
+        data::Vector{DataPoint}
+        original_indices::Vector{Int64}
         root::kdNode
         max_depth::Integer
         num_leaves::Integer
         num_pts::Integer
 
-        function kdTree(data; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS)
-            root = kdNode(data, num_leaf_pts=num_leaf_pts)
+        function kdTree(data::Vector{DataPoint}; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS)
+            original_indices = [1:length(data)...]
+            root = kdNode(data, original_indices=original_indices, num_leaf_pts=num_leaf_pts)
             max_depth, num_leaves, num_pts = getTreeStats(root)
 
-            return new(root, max_depth, num_leaves, num_pts)
+            return new(data, original_indices, root, max_depth, num_leaves, num_pts)
         end
     end
 
@@ -221,7 +271,7 @@ module kdTrees
         if isnothing(node)
             return 0, 0, 0
         elseif node.is_leaf
-            return node.depth, 1, node.n
+            return node.depth, 1, node.index_range.n
         else
             depth_L, num_leaves_L, num_pts_L = getTreeStats(node.l_child)
             depth_R, num_leaves_R, num_pts_R = getTreeStats(node.r_child)
@@ -231,11 +281,11 @@ module kdTrees
     end
 
     # User-exposed functions -------------------------------------------------------------
-    function getContainingNode(query_pt, tree::kdTree; pt_tol=DEFAULT_NUM_LEAF_PTS)
-        return getContainingNode(query_pt, tree.root, pt_tol=pt_tol)
+    function getContainingNode(tree::kdTree, query_pt; pt_tol=DEFAULT_NUM_LEAF_PTS)
+        return getContainingNode(tree.root, query_pt, pt_tol=pt_tol)
     end
 
-    function getContainingNode(query_pt, node::Union{kdNode, Nothing}; pt_tol=DEFAULT_PT_TOL)
+    function getContainingNode(node::Union{kdNode, Nothing}, query_pt; pt_tol=DEFAULT_PT_TOL)
         if isnothing(kd_node)
             return nothing
         elseif node.depth == 0 # Check if the point in question is even in the tree's BV
@@ -247,25 +297,24 @@ module kdTrees
         if node.is_leaf == true
             return node
         elseif query_pt[kd_node.split_dim] <= node.split_val
-            return getContainingNode(query_pt, node.l_child, pt_tol=pt_tol)
+            return getContainingNode(node.l_child, query_pt, pt_tol=pt_tol)
         else
-            return getContainingNode(query_pt, node.r_child, pt_tol=pt_tol)
+            return getContainingNode(node.r_child, query_pt, pt_tol=pt_tol)
         end
     end
 
-    function contains(query_pt, tree::kdTree; pt_tol=DEFAULT_PT_TOL)
+    function contains(tree::kdTree, query_pt; pt_tol=DEFAULT_PT_TOL)
         node = getContainingNode(query_pt, tree.root, pt_tol=pt_tol)
-        return contains(query_pt, node, pt_tol=pt_tol)
+        return contains(node, query_pt, pt_tol=pt_tol)
     end
 
-    function contains(query_pt, node::Union{kdNode, Nothing}; pt_tol=DEFAULT_PT_TOL)
+    function contains(node::Union{kdNode, Nothing}, query_pt; pt_tol=DEFAULT_PT_TOL)
         if isnothing(node)
             return false
         end
 
-        i_end = node.i0 + node.n - 1
-        for i = i0:i_end 
-            if all(abs.(query_pt .- node.data[i])) .< pt_tol
+        for i = node.index_range.first:node.index_range.last
+            if all(abs.(query_pt .- node.data[i].x)) .< pt_tol
                 return true
             end
         end
@@ -329,7 +378,7 @@ module kdTrees
             treePlot!(p, 2*i_level,     max_depth, node.r_child, plot_text=plot_text, leaf_fontsize=leaf_fontsize, max_fontsize=max_fontsize)
         else
             if plot_text
-                annotate!(p, x_pos, y_pos, text("Leaf: i0=$(node.i0),\n n=$(node.n)", :center, fontsize))
+                annotate!(p, x_pos, y_pos, text("Leaf: i0=$(node.index_range.first),\n n=$(node.index_range.n)", :center, fontsize))
             else
                 scatter!(p, [x_pos], [y_pos], markercolor=:red, markerstrokewidth=0, markersize=TREE_MARKER_SIZE)
             end
@@ -363,9 +412,9 @@ module kdTrees
         if isnothing(node)
             return
         elseif node.is_leaf
-            i_end = node.i0 + node.n - 1
+            I = node.index_range.first : node.index_range.last
             markersize = max(MAX_POINT_PLOT_SIZE - 1.5*node.depth, MIN_POINT_PLOT_SIZE)
-            scatter!(p, getindex.(node.data[node.i0:i_end], index[1]), getindex.(node.data[node.i0:i_end], index[2]), 
+            scatter!(p, getindex.(node.data[I], index[1]), getindex.(node.data[I], index[2]), 
                 markercolor=:darkgrey, markerstrokewidth=0, markersize=markersize, markeralpha=0.75)
         else
             i_color = node.depth % length(color_palette) + 1
@@ -397,21 +446,106 @@ module kdTrees
     end
 
 
-    function getLeaves(tree::kdTree)
-        leaves = kdNode[]
-        getLeaves!(leaves, tree.root)
+    function getLeaves(tree::kdTree; index_search=false::Bool)
+        if index_search
+            leaves = IndexRange[]
+        else
+            leaves = kdNode[]
+        end
+        getLeaves!(leaves, tree.root,index_search=index_search)
 
         return leaves
     end
 
-    function getLeaves!(leaves, node::Union{kdNode, Nothing})
+    function getLeaves!(leaves, node::Union{kdNode, Nothing}; index_search=false::Bool)
         if isnothing(node)
             return
         elseif node.is_leaf
-            push!(leaves, node)
+            if index_search
+                push!(leaves, node.index_range)
+            else
+                push!(leaves, node)
+            end
         else
-            getLeaves!(leaves, node.l_child)
-            getLeaves!(leaves, node.r_child)
+            getLeaves!(leaves, node.l_child, index_search=index_search)
+            getLeaves!(leaves, node.r_child, index_search=index_search)
         end
     end
+
+    function intersects(bv1::BoundingVolume, bv2::BoundingVolume; include_boundary=true::Bool)
+        if (  include_boundary && ( any(bv1.min .> bv2.max)  || any(bv1.max .<  bv2.min) ) ) ||
+           ( !include_boundary && ( any(bv1.min .>= bv2.max) || any(bv1.max .<= bv2.min) ) )
+            return false
+        else
+            return true
+        end
+    end
+
+    function isContained(bv::BoundingVolume, query_bv::BoundingVolume; include_boundary=true::Bool)
+        if ( !include_boundary && ( all(query_bv.max .<  bv.max) && all(query_bv.min .>  bv.min) ) ) || 
+           (  include_boundary && ( all(query_bv.max .<= bv.max) && all(query_bv.min .>= bv.min) ) )
+            return true
+        else
+            return false
+        end
+    end
+
+    function getIntersection(bv1::BoundingVolume, bv2::BoundingVolume)
+        if bv1.is_empty || bv2.is_empty
+            return BoundingVolume()
+        end
+
+        new_min = max.(bv1.min, bv2.min)
+        new_max = min.(bv1.max, bv2.max)
+        if any(new_min .> new_max)
+            return BoundingVolume()
+        end
+        return BoundingVolume(new_min, new_max)
+    end
+
+    function search(tree::kdTree, query_bv::BoundingVolume; 
+        include_boundary = true::Bool, 
+              watertight = false::Bool,
+         fully_contained = false::Bool, 
+            index_search = false::Bool )
+
+        if index_search
+            nodes = IndexRange[]
+        else
+            nodes = kdNode[]
+        end
+        search!(nodes, tree.root, query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained)
+        return nodes
+    end
+
+    # TODO: Add a go_to_leaf/lazy_search parameter/flag to allow returning early
+    function search!(nodes, node::Union{kdNode, Nothing}, query_bv::BoundingVolume; 
+        include_boundary = true::Bool,
+              watertight = false::Bool,
+         fully_contained = false::Bool,
+            index_search = false::Bool )
+
+        if isnothing(node)
+            return
+        else 
+            node_bv = watertight ? node.bv_watertight : node.bv
+            cropped_query_bv = getIntersection(node_bv, query_bv)
+
+            if !cropped_query_bv.is_empty
+                if node.is_leaf
+                    if ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained
+                        if index_search
+                            push!(nodes, node.index_range)
+                        else 
+                            push!(nodes, node)
+                        end
+                    end
+                else
+                    search!(nodes, node.l_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                    search!(nodes, node.r_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                end
+            end
+        end
+    end
+
 end # kdTree module
