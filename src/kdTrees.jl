@@ -32,9 +32,9 @@ module kdTrees
     export spatial2Data, getSplit, contains, getContainingNode, getLeaves, partitionPlot, treePlot
 
 
-    struct DataPoint
+    struct DataPoint{T}
         x::AbstractVector
-        y
+        y::T
     end
 
     function spatial2Data(data_num::Vector{Vector{T}}) where T <: Real
@@ -42,7 +42,7 @@ module kdTrees
     end
 
 
-    function Base.getindex(p::DataPoint, i::Integer)
+    function Base.getindex(p::DataPoint{T}, i::Integer) where T
         return p.x[i]
     end
 
@@ -89,7 +89,7 @@ module kdTrees
         return BoundingVolume(ball.center .- ball.radius, ball.center .+ radius)
     end
 
-    function BoundingVolume(data::Vector{DataPoint}, index_range::IndexRange)
+    function BoundingVolume(data::VDP, index_range::IndexRange) where {T, VDP<:Vector{DataPoint{T}}}
         max = copy(data[index_range.first].x)
         min = copy(data[index_range.first].x)
         for i = index_range.first:index_range.last
@@ -104,8 +104,8 @@ module kdTrees
 
 
     # Convention: use <= goes to the left, > goes to the right
-    mutable struct kdNode
-        data::Vector{DataPoint}
+    mutable struct kdNode{T, VDP<:Vector{DataPoint{T}}}
+        data::VDP
         original_indices::Vector{Int64}
         is_leaf::Bool
         index_range::IndexRange
@@ -119,15 +119,15 @@ module kdTrees
         depth::Integer
 
         # Default constructor
-        kdNode(data, original_indices, is_leaf, index_range, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth) = 
-            new(data, original_indices, is_leaf, index_range, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth)
+        kdNode(data::VDP, original_indices, is_leaf, index_range, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth) where {T, VDP<:Vector{DataPoint{T}}} = 
+            new{typeof(data[index_range.first].y), typeof(data)}(data, original_indices, is_leaf, index_range, split_dim, split_val, bv, bv_wt, parent, l_child, r_child, depth) 
 
         # The recursive, top-level constructor
-        function kdNode(data::Vector{DataPoint}; original_indices=[1:length(data)...]::Vector{Int64}, 
+        function kdNode(data::VDP; original_indices=[1:length(data)...]::Vector{Int64}, 
                   parent = nothing::Union{kdNode, Nothing}, 
              index_range = IndexRange(1, n=length(data))::IndexRange, 
                    depth = 0::Integer, 
-            num_leaf_pts = DEFAULT_NUM_LEAF_PTS::Integer)
+            num_leaf_pts = DEFAULT_NUM_LEAF_PTS::Integer) where {T, VDP<:Vector{DataPoint{T}}}
 
             if index_range.n == 0
                 return nothing
@@ -137,7 +137,7 @@ module kdTrees
                 return kdNode(data, original_indices, true, index_range, 0, NaN, bv, bv_wt, parent, nothing, nothing, depth)
             end
 
-            node = new()
+            node = new{typeof(data[index_range.first].y), typeof(data)}()
             node.data = data
             node.original_indices = original_indices
             node.is_leaf = false
@@ -168,7 +168,7 @@ module kdTrees
     end # kdNode struct declaration
 
 
-    function getCentroid(bv::BoundingVolume, data::Vector{DataPoint}, index_range::IndexRange)
+    function getCentroid(bv::BoundingVolume, data::VDP, index_range::IndexRange) where {T, VDP<:Vector{DataPoint{T}}}
         x0 = data[1].x
         centroid = zeros(eltype(x0), size(x0))
         for i in index_range.first:index_range.last
@@ -187,7 +187,7 @@ module kdTrees
             if parent.index_range.first == index_range.first # we are constructing the left child
                 bv_max = copy(parent_bv.max)
                 bv_max[parent.split_dim] = parent.split_val
-                return  BoundingVolume(copy(parent_bv.min), bv_max)
+                return BoundingVolume(copy(parent_bv.min), bv_max)
             else
                 bv_min = copy(parent_bv.min)
                 bv_min[parent.split_dim] = parent.split_val
@@ -215,7 +215,7 @@ module kdTrees
     end
 
 
-    function partitionData!(data::Vector{DataPoint}, original_indices, index_range::IndexRange, split_dim, split_val)
+    function partitionData!(data::VDP, original_indices, index_range::IndexRange, split_dim, split_val) where {T, VDP<:Vector{DataPoint{T}}}
         i_start = index_range.first
         i_end = index_range.last
 
@@ -250,20 +250,20 @@ module kdTrees
         return i_start
     end
 
-    struct kdTree
-        data::Vector{DataPoint}
+    struct kdTree{T, VDP<:Vector{DataPoint{T}}}
+        data::VDP
         original_indices::Vector{Int64}
         root::kdNode
         max_depth::Integer
         num_leaves::Integer
         num_pts::Integer
 
-        function kdTree(data::Vector{DataPoint}; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS)
-            original_indices = [1:length(data)...]
-            root = kdNode(data, original_indices=original_indices, num_leaf_pts=num_leaf_pts)
-            max_depth, num_leaves, num_pts = getTreeStats(root)
+        function kdTree(data::VDP; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS,
+            original_indices = [1:length(data)...]::Vector{Int64},
+            root = kdNode(data, original_indices=original_indices, num_leaf_pts=num_leaf_pts) ) where {T, VDP<:Vector{DataPoint{T}}}
 
-            return new(data, original_indices, root, max_depth, num_leaves, num_pts)
+            max_depth, num_leaves, num_pts = getTreeStats(root)
+            return new{typeof(data[root.index_range.first].y), typeof(data)}(data, original_indices, root, max_depth, num_leaves, num_pts)
         end
     end
 
