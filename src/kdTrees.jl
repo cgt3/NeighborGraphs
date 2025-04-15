@@ -4,7 +4,7 @@ module kdTrees
     using Plots
     using Printf
 
-    using ..GeometricPrimitives: BoundingVolume
+    using ..GeometricPrimitives: BoundingVolume, intersects, isContained, getIntersection
 
     const DEFAULT_NUM_LEAF_PTS = 40
     const DEFAULT_PT_TOL = 1e-12
@@ -442,58 +442,38 @@ module kdTrees
         end
     end
 
-    function intersects(bv1::BoundingVolume, bv2::BoundingVolume; include_boundary=true::Bool)
-        if (  include_boundary && ( any(bv1.min .> bv2.max)  || any(bv1.max .<  bv2.min) ) ) ||
-           ( !include_boundary && ( any(bv1.min .>= bv2.max) || any(bv1.max .<= bv2.min) ) )
-            return false
-        else
-            return true
-        end
+    
+
+    function initializeNodeList(index_search::Bool)
+        return index_search == true ? IndexRange[] : kdNode[]
     end
 
-    function isContained(bv::BoundingVolume, query_bv::BoundingVolume; include_boundary=true::Bool)
-        if ( !include_boundary && ( all(query_bv.max .<  bv.max) && all(query_bv.min .>  bv.min) ) ) || 
-           (  include_boundary && ( all(query_bv.max .<= bv.max) && all(query_bv.min .>= bv.min) ) )
-            return true
-        else
-            return false
-        end
+    function addNode!(nodes::Vector{kdNode{T, VDP}}, node::kdNode) where {T, VDP<:Vector{DataPoint{T}}}
+        push!(nodes, node)
     end
 
-    function getIntersection(bv1::BoundingVolume, bv2::BoundingVolume)
-        if bv1.is_empty || bv2.is_empty
-            return BoundingVolume()
-        end
-
-        new_min = max.(bv1.min, bv2.min)
-        new_max = min.(bv1.max, bv2.max)
-        if any(new_min .> new_max)
-            return BoundingVolume()
-        end
-        return BoundingVolume(new_min, new_max)
+    function addNode!(nodes::Vector{IndexRange}, node::kdNode)
+        push!(nodes, node.index_range)
     end
 
     function search(tree::kdTree, query_bv::BoundingVolume; 
         include_boundary = true::Bool, 
               watertight = false::Bool,
          fully_contained = false::Bool, 
-            index_search = false::Bool )
+            index_search = false::Bool,
+             lazy_search = false::Bool )
 
-        if index_search
-            nodes = IndexRange[]
-        else
-            nodes = kdNode[]
-        end
-        search!(nodes, tree.root, query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained)
+        nodes = initializeNodeList(index_search)
+        search!(nodes, tree.root, query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search)
         return nodes
     end
 
-    # TODO: Add a go_to_leaf/lazy_search parameter/flag to allow returning early
     function search!(nodes, node::Union{kdNode, Nothing}, query_bv::BoundingVolume; 
         include_boundary = true::Bool,
               watertight = false::Bool,
          fully_contained = false::Bool,
-            index_search = false::Bool )
+            index_search = false::Bool,
+             lazy_search = false::Bool )
 
         if isnothing(node)
             return
@@ -504,15 +484,15 @@ module kdTrees
             if !cropped_query_bv.is_empty
                 if node.is_leaf
                     if ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained
-                        if index_search
-                            push!(nodes, node.index_range)
-                        else 
-                            push!(nodes, node)
-                        end
+                        addNode(nodes, node)
                     end
                 else
-                    search!(nodes, node.l_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
-                    search!(nodes, node.r_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                    if lazy_search
+                        addNode(nodes, node)
+                    else
+                        search!(nodes, node.l_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        search!(nodes, node.r_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                    end
                 end
             end
         end

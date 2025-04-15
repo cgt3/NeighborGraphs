@@ -53,14 +53,22 @@ module NeighborGraphs
 
     # TODO: functionality for multiclass rules
 
+    mutable struct SearchNode
+        is_valid::Bool
+        parent::Union{SearchNode, Nothing}
+        l_child::Union{SearchNode, Nothing}
+        r_child::Union{SearchNode, Nothing}
+    end
 
-    # function getNeighbors(pt::DP, tree::kdTree{T, VDP}, search_type::NeighborRule) where {T, DP::DataPoint{T}, VDP::Vector{DataPoint{T}}}
-    #     # Dispatch on search_type
-    # end
 
-    # function getNeighbors!(nbr_list::VDP, pt::DP, tree::kdTree{T, VDP}, search_type) where {T, DP::DataPoint{T}, VDP::Vector{DataPoint{T}}}
-    #     push!(nbr_list, nbr)
-    # end
+
+    function getNeighbors(pt::DP, tree::kdTree{T, VDP}, search_type::NeighborRule) where {T, DP<:DataPoint{T}, VDP<:Vector{DataPoint{T}}}
+        # Dispatch on search_type
+    end
+
+    function getNeighbors!(nbr_list::VDP, pt::DP, tree::kdTree{T, VDP}, search_type) where {T, DP<:DataPoint{T}, VDP<:Vector{DataPoint{T}}}
+        push!(nbr_list, nbr)
+    end
 
 
 end
