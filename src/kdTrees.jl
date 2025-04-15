@@ -4,6 +4,8 @@ module kdTrees
     using Plots
     using Printf
 
+    using ..GeometricPrimitives: BoundingVolume
+
     const DEFAULT_NUM_LEAF_PTS = 40
     const DEFAULT_PT_TOL = 1e-12
 
@@ -26,11 +28,22 @@ module kdTrees
 
                             
     # Data types
-    export Ball, Cone, BoundingVolume, kdNode,  kdTree, DataPoint, IndexRange
+    export IndexRange, DataPoint, kdNode, kdTree
 
     # Functions
     export spatial2Data, getSplit, contains, getContainingNode, getLeaves, partitionPlot, treePlot
+   
+   
+    # TODO: there is most definitely something in Julia that replicates the below, but if
+    #     there is true need to also have n and not just i0,in, than it may be ok to keep.
+    struct IndexRange
+        first::Integer
+        last::Integer
+        n::Integer
 
+        IndexRange(first; last) = new(first, last, last - first + 1)
+        IndexRange(first; n) = new(first, first + n - 1, n)
+    end
 
     struct DataPoint{T}
         x::AbstractVector
@@ -44,49 +57,6 @@ module kdTrees
 
     function Base.getindex(p::DataPoint{T}, i::Integer) where T
         return p.x[i]
-    end
-
-
-    # TODO: there is most definitely something in Julia that replicates the below, but if
-    #     there is true need to also have n and not just i0,in, than it may be ok to keep.
-    struct IndexRange
-        first::Integer
-        last::Integer
-        n::Integer
-
-        IndexRange(first; last) = new(first, last, last - first + 1)
-        IndexRange(first; n) = new(first, first + n - 1, n)
-    end
-
-    # Geometric primitives
-    struct Ball
-        center
-        radius::Real
-        p::Real
-    end
-
-    struct BoundingVolume
-        min::AbstractArray
-        max::AbstractArray
-        is_empty::Bool
-
-        function BoundingVolume()
-            return new(Inf, -Inf, true)
-        end
-
-        function BoundingVolume(min, max)
-            if any(min .> max)
-                @error "kdTree::BoundingVolume: Cannot construct bounding volume with min (=$min) > max (=$max)"
-            elseif length(min) != length(max)
-                @error "kdTree::BoundingVolume: length(min) = $(length(min)) != length(max) = $(length(max))"
-            end
-
-            return new(min, max, false)
-        end
-    end
-
-    function BoundingVolume(ball::Ball)
-        return BoundingVolume(ball.center .- ball.radius, ball.center .+ radius)
     end
 
     function BoundingVolume(data::VDP, index_range::IndexRange) where {T, VDP<:Vector{DataPoint{T}}}

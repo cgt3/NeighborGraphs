@@ -1,7 +1,7 @@
 using Plots
 
-include("kdTrees.jl")
-using .kdTrees
+include("NeighborGraphs.jl")
+using .NeighborGraphs.kdTrees
 
 
 # x = [8:-1:1...]
