@@ -14,7 +14,7 @@
 module NeighborGraphs
 
     # Data types
-    export NNG, kNN #, NUN, kNUN, EpsilonBall, TauRule, Gabriel, BetaSkeleton, Theta, Yao, SemiYao, SVM
+    export EpsilonBall, NNG, kNN #TauRule, NUN, kNUN, Gabriel, BetaSkeleton, Theta, Yao, SemiYao, SVM
     #export Delaunay, Fiber, MulticlassSVM
     
     # Functions
@@ -62,11 +62,11 @@ module NeighborGraphs
 
 
 
-    function getNeighbors(pt::DP, tree::kdTree{T, VDP}, search_type::NeighborRule) where {T, DP<:DataPoint{T}, VDP<:Vector{DataPoint{T}}}
-        # Dispatch on search_type
+    function getLocalNeighbors(pt::DP, tree::kdTree{T, VDP}, search_type::NeighborRule; directed_edges=false::Bool, index_search=false::Bool) where {T, DP<:DataPoint{T}, VDP<:Vector{DataPoint{T}}}
+        
     end
 
-    function getNeighbors!(nbr_list::VDP, pt::DP, tree::kdTree{T, VDP}, search_type) where {T, DP<:DataPoint{T}, VDP<:Vector{DataPoint{T}}}
+    function getLocalNeighbors!(nbr_list::VDP, pt::DP, tree::kdTree{T, VDP}, search_type) where {T, DP<:DataPoint{T}, VDP<:Vector{DataPoint{T}}}
         push!(nbr_list, nbr)
     end
 

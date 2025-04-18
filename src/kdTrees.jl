@@ -4,7 +4,7 @@ module kdTrees
     using Plots
     using Printf
 
-    using ..GeometricPrimitives: BoundingVolume, intersects, isContained, getIntersection
+    using ..GeometricPrimitives: Ball, BoundingVolume, intersects, isContained, getIntersection
 
     const DEFAULT_NUM_LEAF_PTS = 40
     const DEFAULT_PT_TOL = 1e-12
@@ -60,16 +60,16 @@ module kdTrees
     end
 
     function BoundingVolume(data::VDP, index_range::IndexRange) where {T, VDP<:Vector{DataPoint{T}}}
-        max = copy(data[index_range.first].x)
-        min = copy(data[index_range.first].x)
+        ub = copy(data[index_range.first].x)
+        lb = copy(data[index_range.first].x)
         for i = index_range.first:index_range.last
-            d_max = max .< data[i].x
-            max[d_max] = data[i].x[d_max]
+            d_ub = ub .< data[i].x
+            ub[d_ub] = data[i].x[d_ub]
 
-            d_min = min .> data[i].x
-            min[d_min] = data[i].x[d_min]
+            d_lb = lb .> data[i].x
+            lb[d_lb] = data[i].x[d_lb]
         end
-        return BoundingVolume(min, max)
+        return BoundingVolume(lb, ub)
     end
 
 
@@ -155,13 +155,13 @@ module kdTrees
         else
             parent_bv = parent.bv_watertight
             if parent.index_range.first == index_range.first # we are constructing the left child
-                bv_max = copy(parent_bv.max)
-                bv_max[parent.split_dim] = parent.split_val
-                return BoundingVolume(copy(parent_bv.min), bv_max)
+                bv_ub = copy(parent_bv.ub)
+                bv_ub[parent.split_dim] = parent.split_val
+                return BoundingVolume(copy(parent_bv.lb), bv_ub)
             else
-                bv_min = copy(parent_bv.min)
-                bv_min[parent.split_dim] = parent.split_val
-                return BoundingVolume(bv_min, copy(parent_bv.max))
+                bv_lb = copy(parent_bv.lb)
+                bv_lb[parent.split_dim] = parent.split_val
+                return BoundingVolume(bv_lb, copy(parent_bv.ub))
             end
         end
     end
@@ -169,7 +169,7 @@ module kdTrees
     # TODO: change this function to allow different schemes for choosing the split value
     function getSplit(bv::BoundingVolume, bv_wt::BoundingVolume, data, index_range::IndexRange)
         centroid = getCentroid(bv, data, index_range)
-        # mid = 0.5 * (bv.max - bv.min) + bv.min
+        # mid = 0.5 * (bv.ub - bv.lb) + bv.lb
         # dist = centroid - mid
 
         # # Choose the dimension where the centroid is closest to the midpoint
@@ -177,7 +177,7 @@ module kdTrees
         # split_val = centroid[split_dim]
 
         # Choose the dimension that splits the watertight BV into the most square pieces
-        bv_length = bv_wt.max .- bv_wt.min
+        bv_length = bv_wt.ub .- bv_wt.lb
         split_dim = argmax(bv_length)
         split_val = centroid[split_dim]
 
@@ -259,7 +259,7 @@ module kdTrees
         if isnothing(kd_node)
             return nothing
         elseif node.depth == 0 # Check if the point in question is even in the tree's BV
-            if any(query_pt .- node.bv_watertight.max .> pt_tol) || any( query_pt .- node.bv_watertight.min .< pt_tol)
+            if any(query_pt .- node.bv_watertight.ub .> pt_tol) || any( query_pt .- node.bv_watertight.lb .< pt_tol)
                 return nothing
             end
         end
@@ -387,7 +387,7 @@ module kdTrees
             scatter!(p, getindex.(node.data[I], index[1]), getindex.(node.data[I], index[2]), 
                 markercolor=:darkgrey, markerstrokewidth=0, markersize=markersize, markeralpha=0.75)
         else
-            i_color = node.depth % length(color_palette) + 1
+            i_color = node.depth % length(color_palette) + 1 # Note on indexing: node depth is already 0-indexed
 
             if watertight 
                 split_bv = node.bv_watertight
@@ -400,17 +400,17 @@ module kdTrees
 
             if !watertight || node.depth == 0
                 # Plot the parent BV:
-                plot!(p, node.bv.min[index[1]]*[1, 1], [node.bv.min[index[2]], node.bv.max[index[2]]], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # left
-                plot!(p, node.bv.max[index[1]]*[1, 1], [node.bv.min[index[2]], node.bv.max[index[2]]], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # right
-                plot!(p, [node.bv.min[index[1]], node.bv.max[index[1]]], node.bv.min[index[2]]*[1, 1], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # bottom
-                plot!(p, [node.bv.min[index[1]], node.bv.max[index[1]]], node.bv.max[index[2]]*[1, 1], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # top
+                plot!(p, node.bv.lb[index[1]]*[1, 1], [node.bv.lb[index[2]], node.bv.ub[index[2]]], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # left
+                plot!(p, node.bv.ub[index[1]]*[1, 1], [node.bv.lb[index[2]], node.bv.ub[index[2]]], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # right
+                plot!(p, [node.bv.lb[index[1]], node.bv.ub[index[1]]], node.bv.lb[index[2]]*[1, 1], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # bottom
+                plot!(p, [node.bv.lb[index[1]], node.bv.ub[index[1]]], node.bv.ub[index[2]]*[1, 1], linecolor=color_palette[i_color], linestyle=:dash, linewidth=linewidth/2) # top
             end
 
             # Plot the splitting plane
             if node.split_dim == index[1]
-                plot!(p, node.split_val*[1, 1], [split_bv.min[index[2]], split_bv.max[index[2]]], linecolor=color_palette[i_color], linewidth=max(MIN_SPLIT_LINE_WIDTH, MAX_SPLIT_LINE_WIDTH - node.depth))
+                plot!(p, node.split_val*[1, 1], [split_bv.lb[index[2]], split_bv.ub[index[2]]], linecolor=color_palette[i_color], linewidth=max(MIN_SPLIT_LINE_WIDTH, MAX_SPLIT_LINE_WIDTH - node.depth))
             elseif node.split_dim == index[2]
-                plot!(p, [split_bv.min[index[1]], split_bv.max[index[1]]], node.split_val*[1, 1], linecolor=color_palette[i_color], linewidth=max(MIN_SPLIT_LINE_WIDTH, MAX_SPLIT_LINE_WIDTH - node.depth))
+                plot!(p, [split_bv.lb[index[1]], split_bv.ub[index[1]]], node.split_val*[1, 1], linecolor=color_palette[i_color], linewidth=max(MIN_SPLIT_LINE_WIDTH, MAX_SPLIT_LINE_WIDTH - node.depth))
             end
         end
     end
@@ -456,6 +456,7 @@ module kdTrees
         push!(nodes, node.index_range)
     end
 
+    # Bounding volume search
     function search(tree::kdTree, query_bv::BoundingVolume; 
         include_boundary = true::Bool, 
               watertight = false::Bool,
@@ -487,7 +488,7 @@ module kdTrees
                         addNode(nodes, node)
                     end
                 else
-                    if lazy_search
+                    if lazy_search && ( ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained )
                         addNode(nodes, node)
                     else
                         search!(nodes, node.l_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
@@ -496,6 +497,15 @@ module kdTrees
                 end
             end
         end
+    end
+
+    # Ball search
+    function search(tree::kdTree, ball::Ball)
+
+    end
+
+    function search!(tree::kdTree, ball::Ball)
+
     end
 
 end # kdTree module
