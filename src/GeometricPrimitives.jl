@@ -17,7 +17,7 @@ module GeometricPrimitives
         inactive_dim::Vector
         is_active::Vector{Bool}
 
-        Ball(center::Vector{T}, radius::Real, p::Real) = new(center, radius, p, length(center), [eachindex(center)...], ones(Bool, length(center)) ) where T<:Real
+        Ball(center::VecT, radius::Real, p::Real) where {T<:Real, VecT<:Vector{T}} = new(center, radius, p, length(center), [eachindex(center)...], ones(Bool, length(center)) ) 
 
         function Ball(center::Vector{T_real}, radius::Real, p::Real; inactive_dim=Vector{T_int}) where {T_real<:Real, T_int<:Integer}
             is_active = ones(Bool, length(center))
