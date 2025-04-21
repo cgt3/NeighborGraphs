@@ -14,7 +14,7 @@
 module NeighborGraphs
 
     # Data types
-    export EpsilonBall, NNG, kNN #TauRule, NUN, kNUN, Gabriel, BetaSkeleton, Theta, Yao, SemiYao, SVM
+    # export EpsilonBall, NNG, kNN, TauRule, NUN, kNUN, Gabriel, BetaSkeleton, Theta, Yao, SemiYao, SVM
     #export Delaunay, Fiber, MulticlassSVM
     
     # Functions

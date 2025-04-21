@@ -1,10 +1,9 @@
 module kdTrees
 
-    using LinearAlgebra
+    using ..GeometricPrimitives: Ball, BoundingVolume, intersects, isContained, getIntersection
+
     using Plots
     using Printf
-
-    using ..GeometricPrimitives: Ball, BoundingVolume, intersects, isContained, getIntersection
 
     const DEFAULT_NUM_LEAF_PTS = 40
     const DEFAULT_PT_TOL = 1e-12
@@ -21,12 +20,13 @@ module kdTrees
     const TREE_MARKER_SIZE = 20
 
 
-    const DEFAULT_PARTITION_PALETTE = palette([:darkred,       :orangered3,  :darkorange2, :goldenrod1,
+    const DEFAULT_PARTITION_PALETTE = Plots.palette([:darkred,       :orangered3,  :darkorange2, :goldenrod1,
                                                :chartreuse3,   :forestgreen, :darkgreen,      #:olivedrab2
                                                :navy,          :blue,        :deepskyblue,    #:blue
                                                :mediumpurple1, :purple3,     :purple4  ])     #:purple1
 
-                            
+
+
     # Data types
     export IndexRange, DataPoint, kdNode, kdTree
 
@@ -41,8 +41,8 @@ module kdTrees
         last::Integer
         n::Integer
 
-        IndexRange(first; last) = new(first, last, last - first + 1)
         IndexRange(first; n) = new(first, first + n - 1, n)
+        IndexRange(; first, last) = new(first, last, last - first + 1)
     end
 
     struct DataPoint{T}
