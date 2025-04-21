@@ -1,2 +1,8 @@
+name = "NeighborGraphs"
+uuid = "b79decab-43a4-4afd-ad96-c31b62054ed0"
+authors = ["Christina Taylor <christina.taylor@austin.utexas.edu>"]
+version = "0.1.0"
+
 [deps]
+PkgTemplates = "14b8a8f1-9102-5b29-a752-f990bacb7fe1"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
