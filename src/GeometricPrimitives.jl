@@ -1,5 +1,7 @@
 module GeometricPrimitives
 
+    using LinearAlgebra
+
     # Data types
     export Ball, Cone, BoundingVolume#, Cone, Hyperplane, Simplex
 
@@ -16,29 +18,29 @@ module GeometricPrimitives
         active_dim::Vector
         inactive_dim::Vector
         is_active::Vector{Bool}
+        embedding_dim::Integer
 
-        Ball(center::VecT, radius::Real, p::Real) where {T<:Real, VecT<:Vector{T}} = new(center, radius, p, length(center), [eachindex(center)...], ones(Bool, length(center)) ) 
+        function Ball(center::VecReal, radius::Real; p=2::Real, active_dim=true::Bool, indices=(active_dim ? [eachindex(center)...] : VecInt[])::VecInt) where {T_real<:Real, T_int<:Integer, VecReal<:Vector{T_real}, VecInt<:Vector{T_int}}
+            unique_indices=unique(indices)
+            if active_dim
+                is_active = zeros(Bool, length(center))
+                is_active[unique_indices] = true
+    
+                all_dim = [eachindex(center)...]
+                inactive_dim = all_dim[!is_active]
+                dim = length(unique_indices)
+                return new(center, radius, p, dim, unique_indices, inactive_dim, is_active, length(center))
+            else
+                is_active = ones(Bool, length(center))
+                is_active[unique_indices] = false
 
-        function Ball(center::Vector{T_real}, radius::Real, p::Real; inactive_dim=Vector{T_int}) where {T_real<:Real, T_int<:Integer}
-            is_active = ones(Bool, length(center))
-            is_active[inactive_dim] = false
-
-            all_dim = [eachindex(center)...]
-            active_dim = all_dim[is_active]
-            dim = length(active_dim)
-            return new(center, radius, p, dim, active_dim, unique(inactive_dim), is_active)
+                all_dim = [eachindex(center)...]
+                active_dim = all_dim[is_active]
+                dim = length(unique_indices)
+                return new(center, radius, p, dim, active_dim, unique_indices, is_active, length(center))
+            end
         end
-
-        function Ball(center::Vector{T_real}, radius::Real, p::Real; active_dim::Vector{T_int}) where {T_real<:Real, T_int<:Integer}
-            is_active = zeros(Bool, length(center))
-            is_active[active_dim] = true
-
-            all_dim = [eachindex(center)...]
-            inactive_dim = all_dim[!is_active]
-            dim = length(active_dim)
-            return new(center, radius, p, dim, unique(active_dim), inactive_dim, is_active)
-        end
-    end
+    end # struct
 
     # TODO: Finish these classes
     struct Cone end 
@@ -77,8 +79,8 @@ module GeometricPrimitives
                 end
             end
             all_dim = [eachindex(lb)...]
-            active_dim   = all_dim[ is_active]
-            inactive_dim = all_dim[!is_active]
+            active_dim   = all_dim[is_active]
+            inactive_dim = all_dim[ is_active .!= true ] # Cannot do !x it seems
 
             return new(lb, ub, false, dim, active_dim, inactive_dim, is_active)
         end
@@ -243,7 +245,7 @@ module GeometricPrimitives
 
         new_radius = (ball.radius^ball.p - abs(x_d - ball.center)^ball.p )^(1/p)
         inactive_dim = [ball.inactive_dim..., removal_dim]
-        return Ball(new_center, new_radius, ball.p, inactive_dim=inactive_dim)
+        return Ball(new_center, new_radius, p=ball.p, active_dim=false, indices=inactive_dim)
     end
 
 
