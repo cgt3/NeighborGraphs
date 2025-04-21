@@ -1,2 +1,2 @@
 # NeighborGraphs
-Efficient graph construction algorithms for NUN, kNN, epsilon, and tau-rule graphs.
+Efficient graph construction algorithms for obstruction and proximity graphs.
