@@ -3,14 +3,16 @@ module GeometricPrimitives
     using LinearAlgebra
 
     # Data types
-    export Ball, Cone, BoundingVolume#, Cone, Hyperplane, Simplex
+    export GeometricPrimitive, BoundingVolume, Ball#, Cone, Hyperplane, Simplex
 
     # Functions
     export intersects, isContained, getIntersection
 
     const DEFAULT_BV_POINT_TOL = 1e-15
 
-    struct Ball
+    abstract type GeometricPrimitive end
+
+    struct Ball <: GeometricPrimitive
         center::Vector
         radius::Real
         p::Real
@@ -43,11 +45,11 @@ module GeometricPrimitives
     end # struct
 
     # TODO: Finish these classes
-    struct Cone end 
-    struct Hyperplane end
-    struct Simplex end
+    struct Cone <: GeometricPrimitive end 
+    struct Hyperplane <: GeometricPrimitive end
+    struct Simplex <: GeometricPrimitive end
 
-    struct BoundingVolume{}
+    struct BoundingVolume <: GeometricPrimitive
         lb::Vector
         ub::Vector
         is_empty::Bool

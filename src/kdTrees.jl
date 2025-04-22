@@ -442,13 +442,11 @@ module kdTrees
         end
     end
 
-    
-
     function initializeNodeList(index_search::Bool)
         return index_search == true ? IndexRange[] : kdNode[]
     end
 
-    function addNode!(nodes::Vector{kdNode{T, VDP}}, node::kdNode) where {T, VDP<:Vector{DataPoint{T}}}
+    function addNode!(nodes::Vector{kdNode{T, VecDP}}, node::kdNode) where {T, VecDP<:Vector{DataPoint{T}}}
         push!(nodes, node)
     end
 
@@ -456,8 +454,8 @@ module kdTrees
         push!(nodes, node.index_range)
     end
 
-    # Bounding volume search
-    function search(tree::kdTree, query_bv::BoundingVolume; 
+    # Top level search-dispatch function
+    function search(tree::kdTree, query<:GeometricPrimitive; 
         include_boundary = true::Bool, 
               watertight = false::Bool,
          fully_contained = false::Bool, 
@@ -465,10 +463,11 @@ module kdTrees
              lazy_search = false::Bool )
 
         nodes = initializeNodeList(index_search)
-        search!(nodes, tree.root, query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search)
+        search!(nodes, tree.root, query, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search)
         return nodes
     end
 
+    # Bounding volume search
     function search!(nodes, node::Union{kdNode, Nothing}, query_bv::BoundingVolume; 
         include_boundary = true::Bool,
               watertight = false::Bool,
@@ -500,12 +499,34 @@ module kdTrees
     end
 
     # Ball search
-    function search(tree::kdTree, ball::Ball)
+    function search!(nodes, node::Union{kdNode, Nothing}, query_ball::Ball;
+        include_boundary = true::Bool,
+              watertight = false::Bool,
+         fully_contained = false::Bool,
+            index_search = false::Bool,
+             lazy_search = false::Bool )
 
-    end
+        if isnothing(node)
+            return
+        else
+            node_bv = watertight ? node.bv_watertight : node.bv
+            cropped_query_bv = getIntersection(node_bv, query_ball)
 
-    function search!(tree::kdTree, ball::Ball)
-
+            if !cropped_query_bv.is_empty
+                if node.is_leaf
+                    if ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained
+                        addNode(nodes, node)
+                    end
+                else
+                    if lazy_search && ( ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained )
+                        addNode(nodes, node)
+                    else
+                        search!(nodes, node.l_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        search!(nodes, node.r_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                    end
+                end
+            end
+        end
     end
 
 end # kdTree module
