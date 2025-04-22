@@ -12,10 +12,9 @@ jobs:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         version:
-          - 'lts'
+          - "lts"
         os:
           - ubuntu-latest
           - macOS-latest
