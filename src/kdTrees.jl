@@ -500,9 +500,6 @@ module kdTrees
             return
         else 
             node_bv = watertight ? node.bv_watertight : node.bv
-
-            # TODO: watertight searches: For efficiency, only check the BV against the necessary dimensions to save computation
-            #       non-watertight: do the reduced check on the watertight BV first, then the real BV if necessary?
             cropped_query_bv = getIntersection(node_bv, query_bv)
 
             if !cropped_query_bv.is_empty
@@ -540,9 +537,6 @@ module kdTrees
             return
         else
             node_bv = watertight ? node.bv_watertight : node.bv
-
-            # TODO: watertight searches: For efficiency, only check the BV against the necessary dimensions to save computation
-            #       non-watertight: do the reduced check on the watertight BV first, then the real BV if necessary?
             cropped_query_bv = getIntersection(node_bv, query_ball)
 
             if !cropped_query_bv.is_empty

@@ -251,7 +251,6 @@ module GeometricPrimitives
     end
 
 
-    # TODO: Is this compatible with non-simple intersections with BV faces?
     function tightenBVBounds!(bv::BoundingVolume, ball::Ball; tol=DEFAULT_BV_POINT_TOL)
         if ball.dim == 1
             d = ball.active_dim[1]
