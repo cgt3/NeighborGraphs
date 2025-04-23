@@ -442,6 +442,18 @@ module kdTrees
         end
     end
 
+    # Non-point search related functions
+    mutable struct SearchNode
+        search::Union{Bool, Nothing}
+        parent::Union{SearchNode, Nothing}
+        l_child::Union{SearchNode, Nothing}
+        r_child::Union{SearchNode, Nothing}
+
+        SearchNode() = new(nothing, nothing, nothing, nothing)
+
+        SearchNode(search::Bool, parent::Union{SearchNode, Nothing}, l_child::Union{SearchNode, Nothing}, r_child::Union{SearchNode, Nothing}) = new(search, parent, l_child, r_child)
+    end
+
     function initializeNodeList(index_search::Bool)
         return index_search == true ? IndexRange[] : kdNode[]
     end
@@ -455,16 +467,24 @@ module kdTrees
     end
 
     # Top level search-dispatch function
+    # TODO: add functionality for search-and-mark to this function? Need: 
     function search(tree::kdTree, query<:GeometricPrimitive; 
         include_boundary = true::Bool, 
               watertight = false::Bool,
          fully_contained = false::Bool, 
             index_search = false::Bool,
-             lazy_search = false::Bool )
+             lazy_search = false::Bool,
+             search_tree = false::Bool )
 
         nodes = initializeNodeList(index_search)
-        search!(nodes, tree.root, query, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search)
-        return nodes
+        if search_tree
+            search_tree_root = SearchNode()
+        else
+            search_tree_root = nothing
+        end
+        search!(nodes, tree.root, query, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search, search_node=search_tree_root)
+        
+        return nodes, search_tree_root
     end
 
     # Bounding volume search
@@ -473,12 +493,16 @@ module kdTrees
               watertight = false::Bool,
          fully_contained = false::Bool,
             index_search = false::Bool,
-             lazy_search = false::Bool )
+             lazy_search = false::Bool,
+             search_node = nothing::Union{SearchNode, Nothing} )
 
         if isnothing(node)
             return
         else 
             node_bv = watertight ? node.bv_watertight : node.bv
+
+            # TODO: watertight searches: For efficiency, only check the BV against the necessary dimensions to save computation
+            #       non-watertight: do the reduced check on the watertight BV first, then the real BV if necessary?
             cropped_query_bv = getIntersection(node_bv, query_bv)
 
             if !cropped_query_bv.is_empty
@@ -490,8 +514,13 @@ module kdTrees
                     if lazy_search && ( ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained )
                         addNode(nodes, node)
                     else
-                        search!(nodes, node.l_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
-                        search!(nodes, node.r_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        if (include_boundary && cropped_query_bv.lb[node.split_dim] <= node.split_val ) || cropped_query_bv.lb[node.split_dim] < node.split_val
+                            search!(nodes, node.l_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        end
+
+                        if (include_boundary && cropped_query_bv.ub[node.split_dim] >= node.split_val ) || cropped_query_bv.ub[node.split_dim] > node.split_val
+                            search!(nodes, node.r_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        end
                     end
                 end
             end
@@ -504,12 +533,16 @@ module kdTrees
               watertight = false::Bool,
          fully_contained = false::Bool,
             index_search = false::Bool,
-             lazy_search = false::Bool )
+             lazy_search = false::Bool,
+             search_node = nothing::Union{SearchNode, Nothing} )
 
         if isnothing(node)
             return
         else
             node_bv = watertight ? node.bv_watertight : node.bv
+
+            # TODO: watertight searches: For efficiency, only check the BV against the necessary dimensions to save computation
+            #       non-watertight: do the reduced check on the watertight BV first, then the real BV if necessary?
             cropped_query_bv = getIntersection(node_bv, query_ball)
 
             if !cropped_query_bv.is_empty
@@ -521,8 +554,13 @@ module kdTrees
                     if lazy_search && ( ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained )
                         addNode(nodes, node)
                     else
-                        search!(nodes, node.l_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
-                        search!(nodes, node.r_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        if (include_boundary && cropped_query_bv.lb[node.split_dim] <= node.split_val ) || cropped_query_bv.lb[node.split_dim] < node.split_val
+                            search!(nodes, node.l_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        end
+
+                        if (include_boundary && cropped_query_bv.ub[node.split_dim] >= node.split_val ) || cropped_query_bv.ub[node.split_dim] > node.split_val
+                            search!(nodes, node.r_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                        end
                     end
                 end
             end

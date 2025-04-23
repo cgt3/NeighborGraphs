@@ -52,16 +52,6 @@ module NeighborGraphs
 
 
     # TODO: functionality for multiclass rules
-
-    mutable struct SearchNode
-        is_valid::Bool
-        parent::Union{SearchNode, Nothing}
-        l_child::Union{SearchNode, Nothing}
-        r_child::Union{SearchNode, Nothing}
-    end
-
-
-
     function getLocalNeighbors(pt::DP, tree::kdTree{T, VDP}, search_type::NeighborRule; directed_edges=false::Bool, index_search=false::Bool) where {T, DP<:DataPoint{T}, VDP<:Vector{DataPoint{T}}}
         
     end
