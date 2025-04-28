@@ -33,7 +33,15 @@ end
     @test bv.is_active == ones(Bool, 3)
 end
 
-# @testset "Low-dimension BVs"
+@testset "Low-dimension BVs" begin
+    bv = BoundingVolume([1, 2, 3], [4, 2, 5])
+
+    @test bv.is_empty == false
+    @test bv.dim == 2
+    @test bv.active_dim == [1, 3]
+    @test bv.inactive_dim == [2]
+    @test bv.is_active == [true, false, true]
+end
 
 
 # `intersects`: ------------------------------------------------------------------
