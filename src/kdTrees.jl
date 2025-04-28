@@ -5,8 +5,12 @@ module kdTrees
     using Plots
     using Printf
 
+    import Base.getindex
+
     const DEFAULT_NUM_LEAF_PTS = 40
     const DEFAULT_PT_TOL = 1e-12
+
+    # TODO: Add note or something about index(range) searches and their default value
 
     const DEFAULT_PLOT_WIDTH_PER_NODE = 100
     const DEFAULT_PLOT_HEIGHT_PER_NODE = 200
@@ -20,18 +24,21 @@ module kdTrees
     const TREE_MARKER_SIZE = 20
 
 
-    const DEFAULT_PARTITION_PALETTE = Plots.palette([:darkred,       :orangered3,  :darkorange2, :goldenrod1,
+    const DEFAULT_PARTITION_PALETTE = Plots.palette([:darkred, :orangered3,  :darkorange2, :goldenrod1,
                                                :chartreuse3,   :forestgreen, :darkgreen,      #:olivedrab2
                                                :navy,          :blue,        :deepskyblue,    #:blue
                                                :mediumpurple1, :purple3,     :purple4  ])     #:purple1
 
 
+    # Constants
+    export DEFAULT_NUM_LEAF_PTS
 
     # Data types
     export IndexRange, DataPoint, kdNode, kdTree
 
     # Functions
     export spatial2Data, getSplit, contains, getContainingNode, getLeaves, partitionPlot, treePlot
+    export search
    
    
     # TODO: there is most definitely something in Julia that replicates the below, but if
@@ -53,7 +60,6 @@ module kdTrees
     function spatial2Data(data_num::Vector{Vector{T}}) where T <: Real
         return DataPoint.(data_num, nothing)
     end
-
 
     function Base.getindex(p::DataPoint{T}, i::Integer) where T
         return p.x[i]
@@ -228,10 +234,9 @@ module kdTrees
         num_leaves::Integer
         num_pts::Integer
 
-        function kdTree(data::VDP; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS,
-            original_indices = [1:length(data)...]::Vector{Int64},
-            root = kdNode(data, original_indices=original_indices, num_leaf_pts=num_leaf_pts) ) where {T, VDP<:Vector{DataPoint{T}}}
-
+        function kdTree(data::VDP; num_leaf_pts::Integer=DEFAULT_NUM_LEAF_PTS ) where {T, VDP<:Vector{DataPoint{T}}}
+            original_indices = [1:length(data)...]::Vector{Int64}
+            root = kdNode(data, original_indices=original_indices, num_leaf_pts=num_leaf_pts) 
             max_depth, num_leaves, num_pts = getTreeStats(root)
             return new{typeof(data[root.index_range.first].y), typeof(data)}(data, original_indices, root, max_depth, num_leaves, num_pts)
         end
@@ -251,6 +256,7 @@ module kdTrees
     end
 
     # User-exposed functions -------------------------------------------------------------
+    # TODO: should query_pt be restricted to being a DataPoint? Right now it is setup for just a spatial location (vector/array)
     function getContainingNode(tree::kdTree, query_pt; pt_tol=DEFAULT_NUM_LEAF_PTS)
         return getContainingNode(tree.root, query_pt, pt_tol=pt_tol)
     end
@@ -415,33 +421,6 @@ module kdTrees
         end
     end
 
-
-    function getLeaves(tree::kdTree; index_search=false::Bool)
-        if index_search
-            leaves = IndexRange[]
-        else
-            leaves = kdNode[]
-        end
-        getLeaves!(leaves, tree.root,index_search=index_search)
-
-        return leaves
-    end
-
-    function getLeaves!(leaves, node::Union{kdNode, Nothing}; index_search=false::Bool)
-        if isnothing(node)
-            return
-        elseif node.is_leaf
-            if index_search
-                push!(leaves, node.index_range)
-            else
-                push!(leaves, node)
-            end
-        else
-            getLeaves!(leaves, node.l_child, index_search=index_search)
-            getLeaves!(leaves, node.r_child, index_search=index_search)
-        end
-    end
-
     # Non-point search related functions
     mutable struct SearchNode
         search::Union{Bool, Nothing}
@@ -466,25 +445,40 @@ module kdTrees
         push!(nodes, node.index_range)
     end
 
+
+    function getLeaves(tree::kdTree; index_search=false::Bool)
+        leaves = initializeNodeList(index_search)
+        getLeaves!(leaves, tree.root,index_search=index_search)
+
+        return leaves
+    end
+
+    function getLeaves!(leaves, node::Union{kdNode, Nothing}; index_search=false::Bool)
+        if isnothing(node)
+            return
+        elseif node.is_leaf
+            addNode!(leaves, node)
+        else
+            getLeaves!(leaves, node.l_child, index_search=index_search)
+            getLeaves!(leaves, node.r_child, index_search=index_search)
+        end
+    end
+
     # Top level search-dispatch function
-    # TODO: add functionality for search-and-mark to this function? Need: 
-    function search(tree::kdTree, query<:GeometricPrimitive; 
+    function search(tree::kdTree, query<:SearchableGeometry; 
         include_boundary = true::Bool, 
               watertight = false::Bool,
          fully_contained = false::Bool, 
             index_search = false::Bool,
-             lazy_search = false::Bool,
-             search_tree = false::Bool )
+             lazy_search = false::Bool )
 
         nodes = initializeNodeList(index_search)
-        if search_tree
-            search_tree_root = SearchNode()
+        search!(nodes, tree.root, query, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search)
+        if search_and_mark
+            return nodes, root_search_node
         else
-            search_tree_root = nothing
+            return nodes 
         end
-        search!(nodes, tree.root, query, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search, search_node=search_tree_root)
-        
-        return nodes, search_tree_root
     end
 
     # Bounding volume search
@@ -493,11 +487,10 @@ module kdTrees
               watertight = false::Bool,
          fully_contained = false::Bool,
             index_search = false::Bool,
-             lazy_search = false::Bool,
-             search_node = nothing::Union{SearchNode, Nothing} )
+             lazy_search = false::Bool )
 
         if isnothing(node)
-            return
+            return nothing
         else 
             node_bv = watertight ? node.bv_watertight : node.bv
             cropped_query_bv = getIntersection(node_bv, query_bv)
@@ -520,9 +513,9 @@ module kdTrees
                         end
                     end
                 end
-            end
-        end
-    end
+            end # if BV is not empty
+        end # if isnothing(node)
+    end # function
 
     # Ball search
     function search!(nodes, node::Union{kdNode, Nothing}, query_ball::Ball;
@@ -530,8 +523,7 @@ module kdTrees
               watertight = false::Bool,
          fully_contained = false::Bool,
             index_search = false::Bool,
-             lazy_search = false::Bool,
-             search_node = nothing::Union{SearchNode, Nothing} )
+             lazy_search = false::Bool )
 
         if isnothing(node)
             return
@@ -542,7 +534,7 @@ module kdTrees
             if !cropped_query_bv.is_empty
                 if node.is_leaf
                     if ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained
-                        addNode(nodes, node)
+                        addNode!(nodes, node)
                     end
                 else
                     if lazy_search && ( ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained )
@@ -557,8 +549,26 @@ module kdTrees
                         end
                     end
                 end
-            end
-        end
+            end # If BV is not empty
+        end # if isnothing(node)
+    end
+
+    
+    function search!(nodes, node::Union{kdNode, Nothing}, query_cone::Cone;
+        include_boundary = true::Bool,
+              watertight = false::Bool,
+         fully_contained = false::Bool,
+            index_search = false::Bool,
+             lazy_search = false::Bool )
+    end
+
+
+    function search!(nodes, node::Union{kdNode, Nothing}, query_plane::Hyperplane;
+        include_boundary = true::Bool,
+              watertight = false::Bool,
+         fully_contained = false::Bool,
+            index_search = false::Bool,
+             lazy_search = false::Bool )
     end
 
 end # kdTree module
