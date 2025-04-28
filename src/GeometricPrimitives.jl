@@ -3,16 +3,16 @@ module GeometricPrimitives
     using LinearAlgebra
 
     # Data types
-    export GeometricPrimitive, BoundingVolume, Ball#, Cone, Hyperplane, Simplex
+    export SearchableGeometry, BoundingVolume, Ball, Cone, Hyperplane, Simplex
 
     # Functions
     export intersects, isContained, getIntersection
 
     const DEFAULT_BV_POINT_TOL = 1e-15
 
-    abstract type GeometricPrimitive end
+    abstract type SearchableGeometry end
 
-    struct Ball <: GeometricPrimitive
+    struct Ball <: SearchableGeometry
         center::Vector
         radius::Real
         p::Real
@@ -45,11 +45,11 @@ module GeometricPrimitives
     end # struct
 
     # TODO: Finish these classes
-    struct Cone <: GeometricPrimitive end 
-    struct Hyperplane <: GeometricPrimitive end
-    struct Simplex <: GeometricPrimitive end
+    struct Cone <: SearchableGeometry end 
+    struct Hyperplane <: SearchableGeometry end
+    struct Simplex end
 
-    struct BoundingVolume <: GeometricPrimitive
+    struct BoundingVolume <: SearchableGeometry
         lb::Vector
         ub::Vector
         is_empty::Bool
@@ -103,12 +103,9 @@ module GeometricPrimitives
     function getFurthestPoint(bv::BoundingVolume, query_pt::Array)
         furthest_pt = similar(query_pt)        
 
-        ub_is_closer = bv.ub - query_pt .<= query_pt - bv.lb
-        I_lb = query_pt .> bv.ub .|| (bv.lb .<= query_pt &&  ub_is_closer)
-        I_ub = query_pt .< bv.lb .|| (query_pt .<= bv.ub && !ub_is_closer)
-
-        furthest_pt[I_lb] = bv.lb[I_lb]
-        furthest_pt[I_ub] = bv.ub[I_ub]
+        ub_is_closer = 0.5*(bv.ub + bv.lb) .<= query_pt
+        furthest_pt[I_lb] = bv.lb[ ub_is_closer]
+        furthest_pt[I_ub] = bv.ub[!ub_is_closer]
 
         return furthest_pt
     end
