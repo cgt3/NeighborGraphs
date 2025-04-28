@@ -5,8 +5,15 @@ module GeometricPrimitives
     # Data types
     export SearchableGeometry, BoundingVolume, Ball, Cone, Hyperplane, Simplex
 
-    # Functions
+    # General Functions:
     export intersects, isContained, getIntersection
+
+    # BV only functions:
+    export getClosestPoint, getFurthestPoint, faceIndex2SpatialIndex, getFaceBoundingVolume
+
+    # Ball functions:
+    export tightenBVBounds!, getReducedDimBall
+
 
     const DEFAULT_BV_POINT_TOL = 1e-15
 
@@ -65,11 +72,9 @@ module GeometricPrimitives
 
         function BoundingVolume(lb::Vector{T1}, ub::Vector{T2}; tol=DEFAULT_BV_POINT_TOL::Real) where {T1<:Real, T2<:Real}
             if length(lb) != length(ub)
-                @error "kdTree::BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions"
+                throw("NeighborGraphs:GeometricPrimitives: BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions")
             elseif any(lb .> ub)
-                @error "kdTree::BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)"
-            elseif length(lb) != length(ub)
-                @error "kdTree::BoundingVolume: length(lb) = $(length(lb)) != length(ub) = $(length(ub))"
+                throw("NeighborGraphs:GeometricPrimitives: BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)")
             end
 
             dim = length(lb)
@@ -237,7 +242,7 @@ module GeometricPrimitives
 
     function getReducedDimBall(removal_dim::Integer, x_d::Real, ball::Ball)
         if x_d < ball.center[removal_dim] - ball.radius || ball.center[removal_dim] + ball.radius < x_d
-            @error "GeometricPrimitives:getReducedDimBall: coordinate plane defined by x_$removal_dim = $x_d does not intersect the ball (center=$(ball.center), radius=$(ball.radius)"
+            throw("GeometricPrimitives:getReducedDimBall: coordinate plane defined by x_$removal_dim = $x_d does not intersect the ball (center=$(ball.center), radius=$(ball.radius)")
         end
         new_center = copy(ball.center)
         new_center[removal_dim] = x_d

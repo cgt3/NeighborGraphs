@@ -1,6 +1,6 @@
 module kdTrees
 
-    using ..GeometricPrimitives: Ball, BoundingVolume, intersects, isContained, getIntersection
+    using ..GeometricPrimitives: SearchableGeometry, BoundingVolume, Ball, intersects, getIntersection, isContained
 
     using Plots
     using Printf
@@ -465,7 +465,7 @@ module kdTrees
     end
 
     # Top level search-dispatch function
-    function search(tree::kdTree, query<:SearchableGeometry; 
+    function search(tree::kdTree, query::SearchableGeometry; 
         include_boundary = true::Bool, 
               watertight = false::Bool,
          fully_contained = false::Bool, 
@@ -554,21 +554,21 @@ module kdTrees
     end
 
     
-    function search!(nodes, node::Union{kdNode, Nothing}, query_cone::Cone;
-        include_boundary = true::Bool,
-              watertight = false::Bool,
-         fully_contained = false::Bool,
-            index_search = false::Bool,
-             lazy_search = false::Bool )
-    end
+    # function search!(nodes, node::Union{kdNode, Nothing}, query_cone::Cone;
+    #     include_boundary = true::Bool,
+    #           watertight = false::Bool,
+    #      fully_contained = false::Bool,
+    #         index_search = false::Bool,
+    #          lazy_search = false::Bool )
+    # end
 
 
-    function search!(nodes, node::Union{kdNode, Nothing}, query_plane::Hyperplane;
-        include_boundary = true::Bool,
-              watertight = false::Bool,
-         fully_contained = false::Bool,
-            index_search = false::Bool,
-             lazy_search = false::Bool )
-    end
+    # function search!(nodes, node::Union{kdNode, Nothing}, query_plane::Hyperplane;
+    #     include_boundary = true::Bool,
+    #           watertight = false::Bool,
+    #      fully_contained = false::Bool,
+    #         index_search = false::Bool,
+    #          lazy_search = false::Bool )
+    # end
 
 end # kdTree module

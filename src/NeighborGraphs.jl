@@ -14,7 +14,6 @@
 module NeighborGraphs
 
     using SparseArrays
-    using StaticArrays
 
     import Base.getindex
 
@@ -32,10 +31,11 @@ module NeighborGraphs
 
     # Submodules
     include("GeometricPrimitives.jl")
-    using .GeometricPrimitives
+    using .GeometricPrimitives: SearchableGeometry, BoundingVolume, Ball, intersects, getIntersection, isContained
 
     include("kdTrees.jl")
-    using .kdTrees
+    using .kdTrees: DataPoint, IndexRange, kdNode, kdTree, getContainingNode, getLeaves, search
+
 
     abstract type ConnectivityType end # ===============================================
     abstract type Edge end
@@ -72,14 +72,14 @@ module NeighborGraphs
     end
 
     struct AdjacencyMatrix <: ConnectivityType
-        is_edge::Union{Matrix{Bool}, SparseArraysCSC}
+        is_edge::Union{Matrix{Bool}, SparseMatrixCSC}
         num_pts::Integer
         is_sparse::Bool
         is_directed::Bool
     end
 
     struct WeightMatrix <: ConnectivityType
-        edge_weight::Union{Matrix, SparseArraysCSC}
+        edge_weight::Union{Matrix, SparseMatrixCSC}
         num_pts::Integer
         is_sparse::Bool
         is_directed::Bool
@@ -87,7 +87,7 @@ module NeighborGraphs
     end
 
     struct DistanceMatrix <: ConnectivityType
-        edge_length::Union{Matrix, SparseArraysCSC}
+        edge_length::Union{Matrix, SparseMatrixCSC}
         num_pts::Integer
         is_sparse::Bool
         is_directed::Bool
@@ -104,7 +104,7 @@ module NeighborGraphs
         include_duplicates::Bool
     end
     NNG(; p = 2::Integer, include_duplicates=false::Bool) = NNG(p, include_duplicates)
-    NNG(; n::Integer, include_duplicates=false::Bool) = NNG(floor(Int64, log10(n)), include_duplicates)
+    # NNG(; n::Integer, include_duplicates=false::Bool) = NNG(floor(Int64, log10(n)), include_duplicates)
 
     struct KNN <:NeighborRule 
         k::Function
@@ -112,7 +112,7 @@ module NeighborGraphs
         include_duplicates::Bool
     end 
     KNN(k::Integer; p=2::Integer, include_duplicates=false::Bool) = KNN((x->k), p, include_duplicates)
-    KNN(k::Integer; n::Integer, include_duplicates=false::Bool)   = KNN((x->k), floor(Int64, log10(n)), include_duplicates)
+    # KNN(k::Integer; n::Integer, include_duplicates=false::Bool)   = KNN((x->k), floor(Int64, log10(n)), include_duplicates)
 
     struct EpsilonBall <:NeighborRule 
         epsilon::Function
@@ -120,7 +120,7 @@ module NeighborGraphs
         include_boundary::Bool
     end
     EpsilonBall(epsilon; p=2::Real, include_boundary=true::Bool)  = EpsilonBall((x->epsilon), p, include_boundary)
-    EpsilonBall(epsilon; n::Integer, include_boundary=true::Bool) = EpsilonBall((x->epsilon), floor(Int64, log10(n)), include_boundary)
+    # EpsilonBall(epsilon; n::Integer, include_boundary=true::Bool) = EpsilonBall((x->epsilon), floor(Int64, log10(n)), include_boundary)
 
     struct TauRule <:NeighborRule end
 
@@ -206,7 +206,7 @@ module NeighborGraphs
     end
 
     # Epsilon ball:
-    function findLocalNeighbors!(epsilonBall::EpsilonBall, nbr_list::Union{VecInt, VecDP}, pt::DP, tree::kdTree{T, VDP}; params, index_search=DEFAULT_INDEX_SEARCH::Bool) where {T, DP<:DataPoint{T}, VecDP<:Vector{DataPoint{T}}, T_int::Integer, VecInt<:Vector{T_int}}
+    function findLocalNeighbors!(epsilonBall::EpsilonBall, nbr_list::Union{VecInt, VecDP}, pt::T_DP, tree::kdTree{T, VecDP}; params, index_search=DEFAULT_INDEX_SEARCH::Bool) where {T, T_DP<:DataPoint{T}, VecDP<:Vector{DataPoint{T}}, T_int<:Integer, VecInt<:Vector{T_int}}
         ball = Ball(pt.x, epsilonBall.epsilon(pt.x), p=epsilonBall.p)
         neighbor_nodes = search(tree, ball, include_boundary=epsilonBall.include_boundary, index_search=true)
         for node_index_range in neighbor_nodes
@@ -219,7 +219,7 @@ module NeighborGraphs
     end
 
     # NNG
-    function findLocalNeighbors!(nng::NNG, nbr_list::Union{VecInt, VecDP}, pt::DP, tree::kdTree{T, VDP}; params, index_search = DEFAULT_INDEX_SEARCH::Bool ) where {T, DP<:DataPoint{T}, VecDP<:Vector{DataPoint{T}}, T_int::Integer, VecInt<:Vector{T_int}}
+    function findLocalNeighbors!(nng::NNG, nbr_list::Union{VecInt, VecDP}, pt::DP, tree::kdTree{T, VecDP}; params, index_search = DEFAULT_INDEX_SEARCH::Bool ) where {T, DP<:DataPoint{T}, VecDP<:Vector{DataPoint{T}}, T_int<:Integer, VecInt<:Vector{T_int}}
         containing_node = !hasproperty(params, :containing_node) ? getContainingNode(tree, pt, pt_tol=pt_tol) : params.containing_node
         if isnothing(containing_node)
             return
@@ -274,7 +274,7 @@ module NeighborGraphs
 
 
     # KNN
-    function findLocalNeighbors!(knn:KNN, nbr_list::Union{VecInt, VecDP}, pt::DP, tree::kdTree{T, VDP}; params, index_search = DEFAULT_INDEX_SEARCH::Bool ) where {T, DP<:DataPoint{T}, VecDP<:Vector{DataPoint{T}}, T_int::Integer, VecInt<:Vector{T_int}}
+    function findLocalNeighbors!(knn::KNN, nbr_list::Union{VecInt, VecDP}, pt::DP, tree::kdTree{T, VecDP}; params, index_search = DEFAULT_INDEX_SEARCH::Bool ) where {T, DP<:DataPoint{T}, VecDP<:Vector{DataPoint{T}}, T_int<:Integer, VecInt<:Vector{T_int}}
         containing_node = !hasproperty(params, :containing_node) ? getContainingNode(tree, pt, pt_tol=pt_tol) : params.containing_node
         if isnothing(containing_node)
             return
@@ -330,8 +330,8 @@ module NeighborGraphs
 
 
     # Building graphs ========================================================================================
-    struct Graph{T_int<:Integer, T_data, T_rule<:NeighborRule, T_connectivity<:ConnectivityType}
-        dim::T_int
+    struct Graph{T_data, T_rule<:NeighborRule, T_connectivity<:ConnectivityType}
+        dim::Integer
         tree::kdTree{T_data, Vector{DataPoint{T_data}}}
         nbr_rule::T_rule 
         connectivity::T_connectivity
@@ -347,7 +347,7 @@ module NeighborGraphs
             # Build the graph
             buildGraph!(connectivity, tree, nbr_rule)
 
-            return new(dim, tree, nbr_rule, connectivity)
+            return new{typeof(data[1].y), typeof(nbr_rule), typeof(connectivity) }(dim, tree, nbr_rule, connectivity)
         end
     end 
 
