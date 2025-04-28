@@ -67,7 +67,7 @@ module GeometricPrimitives
 
         # For invalid/emtpy BV's (note an empty BV differs from a non-empty BV with dimension 0 (a point))
         function BoundingVolume()
-            return new(Inf, -Inf, true, 0, [], [], [])
+            return new([Inf], [-Inf], true, 0, [], [], Bool[])
         end
 
         function BoundingVolume(lb::Vector{T1}, ub::Vector{T2}; tol=DEFAULT_BV_POINT_TOL::Real) where {T1<:Real, T2<:Real}
