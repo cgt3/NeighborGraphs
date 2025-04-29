@@ -223,7 +223,37 @@ end
     @test all(getFurthestPoint(bv, pt) .== [0,0])
 end
 
-# `getFaceBoundingVolume`: -------------------------------------------------------
+
 # `faceIndex2SpatialIndex`: ------------------------------------------------------
+@testset "    faceIndex2SpatialIndex" begin
+    num_dim = 3
+    @test faceIndex2SpatialIndex(1, num_dim) == 1
+    @test faceIndex2SpatialIndex(4, num_dim) == 1
+end
+
+# `getFaceBoundingVolume`: -------------------------------------------------------
+@testset "    getFaceBoundingVolume" begin
+    bv = BoundingVolume([0,0,0], [1,1,1])
+
+    left  = BoundingVolume([0,0,0], [0,1,1])
+    right = BoundingVolume([1,0,0], [1,1,1])
+    
+    front = BoundingVolume([0,0,0], [1,0,1])
+    back  = BoundingVolume([0,1,0], [1,1,1])
+
+    btm   = BoundingVolume([0,0,0], [1,1,0])
+    top   = BoundingVolume([0,0,1], [1,1,1])
+
+    # LB faces
+    @test getFaceBoundingVolume(1, bv) == left
+    @test getFaceBoundingVolume(2, bv) == front
+    @test getFaceBoundingVolume(3, bv) == btm
+
+    # UB faces
+    @test getFaceBoundingVolume(4, bv) == right
+    @test getFaceBoundingVolume(5, bv) == back
+    @test getFaceBoundingVolume(6, bv) == top
+end
+
 
 
