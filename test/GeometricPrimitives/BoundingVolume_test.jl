@@ -23,14 +23,15 @@ end
     @test length(bv.is_active) == 0
 end
 
-@testset "    Full-dimension BV" begin
-    bv = BoundingVolume([1,2,3], [4,5,6])
+@testset "    Point BV" begin
+    bv = BoundingVolume([1, 2, 3], [1, 2, 3])
 
-    @test bv.dim == 3
     @test bv.is_empty == false
-    @test bv.active_dim == [1,2,3]
-    @test length(bv.inactive_dim) == 0
-    @test bv.is_active == ones(Bool, 3)
+    @test bv.lb == bv.ub
+    @test bv.dim == 0
+    @test bv.active_dim == [ ]
+    @test bv.inactive_dim == [1, 2, 3]
+    @test bv.is_active == [false, false, false]
 end
 
 @testset "    Low-dimension BV" begin
@@ -41,16 +42,17 @@ end
     @test bv.active_dim == [1, 3]
     @test bv.inactive_dim == [2]
     @test bv.is_active == [true, false, true]
+    @test bv.lb[bv.inactive_dim] == bv.ub[bv.inactive_dim]
 end
 
-@testset "    Point BV" begin
-    bv = BoundingVolume([1, 2, 3], [1, 2, 3])
+@testset "    Full-dimension BV" begin
+    bv = BoundingVolume([1,2,3], [4,5,6])
 
+    @test bv.dim == 3
     @test bv.is_empty == false
-    @test bv.dim == 0
-    @test bv.active_dim == [ ]
-    @test bv.inactive_dim == [1, 2, 3]
-    @test bv.is_active == [false, false, false]
+    @test bv.active_dim == [1,2,3]
+    @test length(bv.inactive_dim) == 0
+    @test bv.is_active == ones(Bool, 3)
 end
 
 
@@ -136,6 +138,45 @@ end
 end
 
 # `getIntersection`: -------------------------------------------------------------
+@testset "    getIntersection(BV, BV): Empty Intersection" begin
+    bv1 = BoundingVolume([0,0], [1,1])
+    bv2 = BoundingVolume([-2, -2], [-1, -1])
+
+    intersection = getIntersection(bv1, bv2)
+    @test intersection.is_empty == true
+end
+
+@testset "    getIntersection(BV, BV): Low-Dim Intersection" begin
+    bv = BoundingVolume([0,0], [1,1])
+
+    bv_pt = BoundingVolume([-1, -1], [0, 0])
+    pt_intersection = getIntersection(bv, bv_pt)
+    @test pt_intersection.dim == 0
+    @test pt_intersection.is_empty == false
+    @test pt_intersection.lb == pt_intersection.ub
+
+    bv_line = BoundingVolume([-1, 0], [0, 1])
+    line_intersection = getIntersection(bv, bv_line)
+    @test line_intersection.dim == 1
+    @test line_intersection.is_empty == false
+    @test line_intersection.lb == [0,0]
+    @test line_intersection.ub == [0,1]
+end
+
+@testset "    getIntersection(BV, BV): Full-Dim Intersection" begin
+    bv = BoundingVolume([0,0], [1,1])
+    bv_interior = BoundingVolume([0.25, 0.25], [0.75, 0.75])
+
+    interior_intersection = getIntersection(bv, bv_interior)
+    @test interior_intersection == bv_interior
+
+    bv_overlapping = BoundingVolume([-1, -1], [0.25, 0.5])
+    intersection_true = BoundingVolume([0,0], [0.25, 0.5])
+    intersection = getIntersection(bv, bv_overlapping)
+    @test intersection == intersection_true
+end
+
+
 # `getClosestPoint`: -------------------------------------------------------------
 # `getFurthestPoint`: ------------------------------------------------------------
 # `getFaceBoundingVolume`: -------------------------------------------------------

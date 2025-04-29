@@ -93,6 +93,18 @@ module GeometricPrimitives
         end
     end
 
+    import Base.==
+    function Base.:(==)(bv1::BoundingVolume, bv2::BoundingVolume)
+        return           all(bv1.lb .== bv2.lb) &&
+                         all(bv1.ub .== bv2.ub) &&
+                       bv1.is_empty .== bv2.is_empty &&
+                            bv1.dim .== bv2.dim &&
+                 all(bv1.active_dim .== bv2.active_dim) &&
+               all(bv1.inactive_dim .== bv2.inactive_dim) &&
+                  all(bv1.is_active .== bv2.is_active)    
+    end
+
+
     function getClosestPoint(bv::BoundingVolume, query_pt::Array)
         closest_pt = copy(query_pt)
 
@@ -152,6 +164,7 @@ module GeometricPrimitives
         if any(new_lb .> new_ub)
             return BoundingVolume()
         end
+        
         return BoundingVolume(new_lb, new_ub, tol=tol)
     end
 
