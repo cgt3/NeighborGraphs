@@ -178,7 +178,51 @@ end
 
 
 # `getClosestPoint`: -------------------------------------------------------------
+@testset "    getClosestPoint(BV, pt): Interior Point (pt in BV)" begin
+    bv = BoundingVolume([0,0], [1,1])
+    pt = [0.5, 0.5]
+
+    @test all(getClosestPoint(bv, pt) .== pt)
+end
+
+@testset "    getClosestPoint(BV, pt): Boundary Point (pt on boundary(BV))" begin
+    bv = BoundingVolume([0,0], [1,1])
+    pt = [0.5, 1]
+
+    @test all(getClosestPoint(bv, pt) .== pt)
+end
+
+@testset "    getClosestPoint(BV, pt): Exterior (pt !in BV)" begin
+    bv = BoundingVolume([0,0], [1,1])
+    pt = [1.5, 1.5]
+
+    @test all(getClosestPoint(bv, pt) .== [1, 1])
+end
+
 # `getFurthestPoint`: ------------------------------------------------------------
+@testset "    getFurthestPoint(BV, pt): Interior Point (pt in BV)" begin
+    bv = BoundingVolume([0,0], [1,1])
+    pt1 = [0.25, 0.25]
+    pt2 = [0.5, 0.5]
+
+    @test all(getFurthestPoint(bv, pt1) .== [1,1])
+    @test all(getFurthestPoint(bv, pt2) .== [0,0]) # Note: ties go to the lb
+end
+
+@testset "    getFurthestPoint(BV, pt): Boundary Point (pt on boundary(BV))" begin
+    bv = BoundingVolume([0,0], [1,1])
+    pt = [0.25, 1]
+
+    @test all(getFurthestPoint(bv, pt) .== [1, 0])
+end
+
+@testset "    getFurthestPoint(BV, pt): Exterior (pt !in BV)" begin
+    bv = BoundingVolume([0,0], [1,1])
+    pt = [1.5, 1.5]
+
+    @test all(getFurthestPoint(bv, pt) .== [0,0])
+end
+
 # `getFaceBoundingVolume`: -------------------------------------------------------
 # `faceIndex2SpatialIndex`: ------------------------------------------------------
 

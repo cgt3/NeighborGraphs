@@ -121,8 +121,9 @@ module GeometricPrimitives
         furthest_pt = similar(query_pt)        
 
         ub_is_closer = 0.5*(bv.ub + bv.lb) .<= query_pt
-        furthest_pt[I_lb] = bv.lb[ ub_is_closer]
-        furthest_pt[I_ub] = bv.ub[!ub_is_closer]
+        lb_is_closer = ub_is_closer .== false
+        furthest_pt[ub_is_closer] = bv.lb[ub_is_closer]
+        furthest_pt[lb_is_closer] = bv.ub[lb_is_closer]
 
         return furthest_pt
     end
@@ -164,7 +165,7 @@ module GeometricPrimitives
         if any(new_lb .> new_ub)
             return BoundingVolume()
         end
-        
+
         return BoundingVolume(new_lb, new_ub, tol=tol)
     end
 
