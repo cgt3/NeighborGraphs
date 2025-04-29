@@ -81,6 +81,59 @@ end
 
 
 # `isContained`: -----------------------------------------------------------------
+@testset "    isContained(BV, pt)" begin
+    bv = BoundingVolume([0,0], [1,1])
+    interior_pt = [0.5, 0.5]
+    boundary_pt = [1, 0]
+    exterior_pt = [2, 2]
+
+    @test isContained(bv, interior_pt, include_boundary=true) == true
+    @test isContained(bv, interior_pt, include_boundary=false) == true
+
+    @test isContained(bv, boundary_pt, include_boundary=true) == true
+    @test isContained(bv, boundary_pt, include_boundary=false) == false
+
+    @test isContained(bv, exterior_pt, include_boundary=true) == false
+    @test isContained(bv, exterior_pt, include_boundary=false) == false
+end
+
+@testset "    isContained(BV, BV): Empty Intersection" begin
+    bv = BoundingVolume([0, 0], [1, 1])
+    bv_query = BoundingVolume([-2, -2], [-1, -1])
+
+    @test isContained(bv, bv_query, include_boundary=true) == false
+    @test isContained(bv, bv_query, include_boundary=false) == false
+end
+
+@testset "    isContained(BV, BV): Partial Intersections" begin
+    bv = BoundingVolume([0, 0], [1, 1])
+    bv_query = BoundingVolume([-1, -1], [0.5, 0.5])
+
+    # Full-dim intersection
+    @test isContained(bv, bv_query, include_boundary=true) == false
+    @test isContained(bv, bv_query, include_boundary=false) == false
+
+    # Low-dimension intersection
+    bv_query = BoundingVolume([-1, 0], [0, 1])
+    @test isContained(bv, bv_query, include_boundary=true) == false
+    @test isContained(bv, bv_query, include_boundary=false) == false
+end
+
+@testset "    isContained(BV, BV): Contained" begin
+    bv = BoundingVolume([0, 0], [1, 1])
+    bv_query = BoundingVolume([0.25, 0.25], [0.75, 0.75])
+
+    @test isContained(bv, bv_query, include_boundary=true) == true
+    @test isContained(bv, bv_query, include_boundary=false) == true
+end
+
+@testset "    isContained(BV, BV): Strictly/fully Contained" begin
+    bv = BoundingVolume([0, 0], [1, 1])
+    bv_query = BoundingVolume([0.25, 0.25], [1, 1])
+
+    @test isContained(bv, bv_query, include_boundary=true) == true
+    @test isContained(bv, bv_query, include_boundary=false) == false
+end
 
 # `getIntersection`: -------------------------------------------------------------
 # `getClosestPoint`: -------------------------------------------------------------
