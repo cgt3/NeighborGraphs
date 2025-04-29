@@ -33,7 +33,7 @@ end
     @test bv.is_active == ones(Bool, 3)
 end
 
-@testset "Low-dimension BVs" begin
+@testset "    Low-dimension BV" begin
     bv = BoundingVolume([1, 2, 3], [4, 2, 5])
 
     @test bv.is_empty == false
@@ -43,9 +43,45 @@ end
     @test bv.is_active == [true, false, true]
 end
 
+@testset "    Point BV" begin
+    bv = BoundingVolume([1, 2, 3], [1, 2, 3])
+
+    @test bv.is_empty == false
+    @test bv.dim == 0
+    @test bv.active_dim == [ ]
+    @test bv.inactive_dim == [1, 2, 3]
+    @test bv.is_active == [false, false, false]
+end
+
 
 # `intersects`: ------------------------------------------------------------------
+@testset "    intersects(BV, BV): Empty Intersection" begin
+    bv1 = BoundingVolume([1, 2], [3, 4])
+    bv2 = BoundingVolume([-3, -4], [-1, -2])
+
+    @test intersects(bv1, bv2) == false
+    @test intersects(bv1, bv2, include_boundary=true) == false
+end
+
+@testset "    intersects(BV, BV): Low-Dim Intersection" begin
+    bv1 = BoundingVolume([1, 2], [3, 4])
+    bv2 = BoundingVolume([0, 0], [1, 2])
+
+    @test intersects(bv1, bv2, include_boundary=true) == true
+    @test intersects(bv1, bv2, include_boundary=false) == false
+end
+
+@testset "    intersects(BV, BV): Full-Dim Intersection" begin
+    bv1 = BoundingVolume([1, 2], [3, 4])
+    bv2 = BoundingVolume([0, 0], [2, 3])
+
+    @test intersects(bv1, bv2) == true
+    @test intersects(bv1, bv2, include_boundary=true) == true
+end
+
+
 # `isContained`: -----------------------------------------------------------------
+
 # `getIntersection`: -------------------------------------------------------------
 # `getClosestPoint`: -------------------------------------------------------------
 # `getFurthestPoint`: ------------------------------------------------------------

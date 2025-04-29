@@ -1,7 +1,11 @@
 using SafeTestsets
 
-@safetestset "GeometricPrimitive: BoundingVolumes:" begin include("GeometricPrimitives/BoundingVolume_test.jl") end
-@safetestset "GeometricPrimitive: Balls" begin include("GeometricPrimitives/Ball_test.jl") end
+@safetestset "GeometricPrimitives:" begin 
+    @safetestset "  BoundingVolumes:" begin include("GeometricPrimitives/BoundingVolume_test.jl") end
+    @safetestset "  Balls:" begin include("GeometricPrimitives/Ball_test.jl") end
+end
 
-@safetestset "kdTrees: Base Functionality" begin include("kdTrees/kdTrees_test.jl") end
-@safetestset "kdTrees: Searches" begin include("kdTrees/search_test.jl") end
+@safetestset "kdTrees:" begin 
+    @safetestset "  Base functionality: " begin include("kdTrees/kdTrees_test.jl") end
+    @safetestset "  Searches" begin include("kdTrees/search_test.jl") end
+end
