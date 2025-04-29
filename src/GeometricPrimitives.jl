@@ -3,14 +3,23 @@ module GeometricPrimitives
     using LinearAlgebra
 
     # Data types
-    export Ball, Cone, BoundingVolume#, Cone, Hyperplane, Simplex
+    export SearchableGeometry, BoundingVolume, Ball, Cone, Hyperplane, Simplex
 
-    # Functions
+    # General Functions:
     export intersects, isContained, getIntersection
+
+    # BV only functions:
+    export getClosestPoint, getFurthestPoint, faceIndex2SpatialIndex, getFaceBoundingVolume
+
+    # Ball functions:
+    export tightenBVBounds!, getReducedDimBall
+
 
     const DEFAULT_BV_POINT_TOL = 1e-15
 
-    struct Ball
+    abstract type SearchableGeometry end
+
+    struct Ball <: SearchableGeometry
         center::Vector
         radius::Real
         p::Real
@@ -43,11 +52,11 @@ module GeometricPrimitives
     end # struct
 
     # TODO: Finish these classes
-    struct Cone end 
-    struct Hyperplane end
+    struct Cone <: SearchableGeometry end 
+    struct Hyperplane <: SearchableGeometry end
     struct Simplex end
 
-    struct BoundingVolume{}
+    struct BoundingVolume <: SearchableGeometry
         lb::Vector
         ub::Vector
         is_empty::Bool
@@ -58,16 +67,14 @@ module GeometricPrimitives
 
         # For invalid/emtpy BV's (note an empty BV differs from a non-empty BV with dimension 0 (a point))
         function BoundingVolume()
-            return new(Inf, -Inf, true, 0, [], [], [])
+            return new([Inf], [-Inf], true, 0, [], [], Bool[])
         end
 
         function BoundingVolume(lb::Vector{T1}, ub::Vector{T2}; tol=DEFAULT_BV_POINT_TOL::Real) where {T1<:Real, T2<:Real}
             if length(lb) != length(ub)
-                @error "kdTree::BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions"
+                throw("NeighborGraphs:GeometricPrimitives: BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions")
             elseif any(lb .> ub)
-                @error "kdTree::BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)"
-            elseif length(lb) != length(ub)
-                @error "kdTree::BoundingVolume: length(lb) = $(length(lb)) != length(ub) = $(length(ub))"
+                throw("NeighborGraphs:GeometricPrimitives: BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)")
             end
 
             dim = length(lb)
@@ -86,6 +93,18 @@ module GeometricPrimitives
         end
     end
 
+    import Base.==
+    function Base.:(==)(bv1::BoundingVolume, bv2::BoundingVolume)
+        return           all(bv1.lb .== bv2.lb) &&
+                         all(bv1.ub .== bv2.ub) &&
+                       bv1.is_empty .== bv2.is_empty &&
+                            bv1.dim .== bv2.dim &&
+                 all(bv1.active_dim .== bv2.active_dim) &&
+               all(bv1.inactive_dim .== bv2.inactive_dim) &&
+                  all(bv1.is_active .== bv2.is_active)    
+    end
+
+
     function getClosestPoint(bv::BoundingVolume, query_pt::Array)
         closest_pt = copy(query_pt)
 
@@ -101,12 +120,10 @@ module GeometricPrimitives
     function getFurthestPoint(bv::BoundingVolume, query_pt::Array)
         furthest_pt = similar(query_pt)        
 
-        ub_is_closer = bv.ub - query_pt .<= query_pt - bv.lb
-        I_lb = query_pt .> bv.ub .|| (bv.lb .<= query_pt &&  ub_is_closer)
-        I_ub = query_pt .< bv.lb .|| (query_pt .<= bv.ub && !ub_is_closer)
-
-        furthest_pt[I_lb] = bv.lb[I_lb]
-        furthest_pt[I_ub] = bv.ub[I_ub]
+        ub_is_closer = 0.5*(bv.ub + bv.lb) .<= query_pt
+        lb_is_closer = ub_is_closer .== false
+        furthest_pt[ub_is_closer] = bv.lb[ub_is_closer]
+        furthest_pt[lb_is_closer] = bv.ub[lb_is_closer]
 
         return furthest_pt
     end
@@ -148,6 +165,7 @@ module GeometricPrimitives
         if any(new_lb .> new_ub)
             return BoundingVolume()
         end
+
         return BoundingVolume(new_lb, new_ub, tol=tol)
     end
 
@@ -238,7 +256,7 @@ module GeometricPrimitives
 
     function getReducedDimBall(removal_dim::Integer, x_d::Real, ball::Ball)
         if x_d < ball.center[removal_dim] - ball.radius || ball.center[removal_dim] + ball.radius < x_d
-            @error "GeometricPrimitives:getReducedDimBall: coordinate plane defined by x_$removal_dim = $x_d does not intersect the ball (center=$(ball.center), radius=$(ball.radius)"
+            throw("GeometricPrimitives:getReducedDimBall: coordinate plane defined by x_$removal_dim = $x_d does not intersect the ball (center=$(ball.center), radius=$(ball.radius)")
         end
         new_center = copy(ball.center)
         new_center[removal_dim] = x_d
@@ -271,6 +289,10 @@ module GeometricPrimitives
             return altered_lb_indices, altered_ub_indices
         end
 
+        # For non-simple intersections
+        ub_pt_projected = ball.center
+        lb_pt_projected = ball.center
+
         # For every face with no intersection with the ball, recurse
         altered_lb_indices = []
         altered_ub_indices = []
@@ -278,27 +300,51 @@ module GeometricPrimitives
         for f_target in 1:2*num_dim # for each face
             face_bv = getFaceBoundingVolume(f_target, bv, tol=tol)
 
+            non_simple = false
             if !intersects(face_bv, ball, include_boundary=true, tol=tol)
                 adjacent_faces = [1:f_target-1..., f_target+1:2*num_dim...]
+                d_target = faceIndex2SpatialIndex(f_target, num_dim)
 
-                for f_adjacent in adjacent_faces
-                    adjacent_face_bv = getFaceBoundingVolume(f_adjacent, bv, tol=tol)
-
-                    if intersects(adjacent_face_bv, ball, include_boundary=true)
-                        d_fixed = faceIndex2SpatialIndex(f_adjacent, length(bv.lb))
-                        reduced_ball = getReducedDimBall(d_fixed, adjacent_face_bv.lb[d_fixed], ball)
-
-                         # This will modify face_adjacent's bounds 
-                        altered_lb_indices_new, altered_ub_indices_new = tightenBounds!(adjacent_face_bv, reduced_ball, tol=tol)
-
-                        # Update the higher-dim BV with the new bounds on face_adjacent
-                        bv.lb[altered_lb_indices_new] .= adjacent_face_bv.lb[altered_lb_indices_new]
-                        bv.ub[altered_ub_indices_new] .= adjacent_face_bv.ub[altered_ub_indices_new]
-
-                        altered_lb_indices = vcat(altered_lb_indices, altered_lb_indices_new)
-                        altered_ub_indices = vcat(altered_ub_indices, altered_ub_indices_new)
+                # Check if this face needs to be updated using a non-simple intersection
+                if f_target < num_dim # f_target is a lb face
+                    lb_pt_projected[d_target] = face_bv.lb[d_target]
+                    if isContained(fave_bv, lb_pt_projected, include_boundary=true)
+                        push!(altered_lb_indices, d_target)
+                        bv.lb[d_target] = ball.center[d_target] - ball.radius
+                        non_simple = true
                     end
+                    lb_pt_projected[d_target] = ball.center[d_target]
+                else # f_target is an ub face
+                    ub_pt_projected[d_target] = face_bv.ub[d_target]
+                    if isContained(fave_bv, ub_pt_projected, include_boundary=true)
+                        push!(altered_ub_indices, d_target)
+                        bv.ub[d_target] = ball.center[d_target] + ball.radius
+                        non_simple = true
+                    end
+                    ub_pt_projected[d_target] = ball.center[d_target]
                 end
+
+                # For simple intersections
+                if !non_simple
+                    for f_adjacent in adjacent_faces
+                        adjacent_face_bv = getFaceBoundingVolume(f_adjacent, bv, tol=tol)
+
+                        if intersects(adjacent_face_bv, ball, include_boundary=true)
+                            d_fixed = faceIndex2SpatialIndex(f_adjacent, num_dim)
+                            reduced_ball = getReducedDimBall(d_fixed, adjacent_face_bv.lb[d_fixed], ball)
+
+                            # This will modify face_adjacent's bounds 
+                            altered_lb_indices_new, altered_ub_indices_new = tightenBounds!(adjacent_face_bv, reduced_ball, tol=tol)
+
+                            # Update the higher-dim BV with the new bounds on face_adjacent
+                            bv.lb[altered_lb_indices_new] .= adjacent_face_bv.lb[altered_lb_indices_new]
+                            bv.ub[altered_ub_indices_new] .= adjacent_face_bv.ub[altered_ub_indices_new]
+
+                            altered_lb_indices = vcat(altered_lb_indices, altered_lb_indices_new)
+                            altered_ub_indices = vcat(altered_ub_indices, altered_ub_indices_new)
+                        end
+                    end # for
+                end # if simple
             end
         end
 
