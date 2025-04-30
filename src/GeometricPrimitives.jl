@@ -391,6 +391,12 @@ module GeometricPrimitives
 
 
     # Cone Functions: ========================================================================================
+    function getUpperBoundLine(cone::Cone, dim::Integer)
+    end
+
+    function getLowerBoundLine(cone::Cone, dim::Integer)
+    end
+
     function BoundingVolume(cone::Cone, R_min::Real, R_max::Real)
     end
 
