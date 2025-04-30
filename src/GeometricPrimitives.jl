@@ -30,6 +30,10 @@ module GeometricPrimitives
         embedding_dim::Integer
 
         function Ball(center::VecReal, radius::Real; p=2::Real, active_dim=true::Bool, indices=(active_dim ? [eachindex(center)...] : VecInt[])::VecInt) where {T_real<:Real, T_int<:Integer, VecReal<:Vector{T_real}, VecInt<:Vector{T_int}}
+            if radius < 0
+                throw("GeometricPrimitives.Ball: Cannot construct ball with negative radius.")
+            end
+
             unique_indices=unique(indices)
             if active_dim
                 is_active = zeros(Bool, length(center))
@@ -51,8 +55,22 @@ module GeometricPrimitives
         end
     end # struct
 
+    struct Cone <: SearchableGeometry
+        vertex::Vector 
+        axis::Vector 
+        slope::Real
+
+        function Cone(vertex::Vector, axis::Vector, slope::Real)
+            if length(vertex) != length(axis)
+                throw("GeometricPrimitives.Cone: Vertex and normal vector do not have the same dimensions (dim(vertex)=$(length(vertex)), dim(axis)=$(length(n)))")
+            elseif slope < 0 
+                throw("GeometricPrimitives.Cone: Cannot construct cone with negative slope.")
+            end
+            return new(vertex, axis, slope)
+        end
+    end
+
     # TODO: Finish these classes
-    struct Cone <: SearchableGeometry end 
     struct Hyperplane <: SearchableGeometry end
     struct Simplex end
 
@@ -72,9 +90,9 @@ module GeometricPrimitives
 
         function BoundingVolume(lb::Vector{T1}, ub::Vector{T2}; tol=DEFAULT_BV_POINT_TOL::Real) where {T1<:Real, T2<:Real}
             if length(lb) != length(ub)
-                throw("NeighborGraphs:GeometricPrimitives: BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions")
+                throw("GeometricPrimitives.BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions")
             elseif any(lb .> ub)
-                throw("NeighborGraphs:GeometricPrimitives: BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)")
+                throw("GeometricPrimitives.BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)")
             end
 
             dim = length(lb)
@@ -105,7 +123,7 @@ module GeometricPrimitives
     end
 
 
-    function getClosestPoint(bv::BoundingVolume, query_pt::Array)
+    function getClosestPoint(bv::BoundingVolume, query_pt::Vector)
         closest_pt = copy(query_pt)
 
         I_lb = query_pt .< bv.lb
@@ -117,7 +135,7 @@ module GeometricPrimitives
         return closest_pt
     end
 
-    function getFurthestPoint(bv::BoundingVolume, query_pt::Array)
+    function getFurthestPoint(bv::BoundingVolume, query_pt::Vector)
         furthest_pt = similar(query_pt)        
 
         ub_is_closer = 0.5*(bv.ub + bv.lb) .<= query_pt
@@ -128,7 +146,7 @@ module GeometricPrimitives
         return furthest_pt
     end
 
-    function isContained(bv::BoundingVolume, query_pt::Array; include_boundary=true::Bool)
+    function isContained(bv::BoundingVolume, query_pt::Vector; include_boundary=true::Bool)
         if ( include_boundary  && all(bv.lb .<= query_pt .<= bv.ub) ) ||
            ( !include_boundary && all(bv.lb .<  query_pt .<  bv.ub) )
            return true
@@ -256,8 +274,9 @@ module GeometricPrimitives
 
     function getReducedDimBall(removal_dim::Integer, x_d::Real, ball::Ball)
         if x_d < ball.center[removal_dim] - ball.radius || ball.center[removal_dim] + ball.radius < x_d
-            throw("GeometricPrimitives:getReducedDimBall: coordinate plane defined by x_$removal_dim = $x_d does not intersect the ball (center=$(ball.center), radius=$(ball.radius)")
+            throw("GeometricPrimitives.getReducedDimBall: coordinate plane defined by x_$removal_dim = $x_d does not intersect the ball (center=$(ball.center), radius=$(ball.radius)")
         end
+
         new_center = copy(ball.center)
         new_center[removal_dim] = x_d
 
@@ -369,4 +388,25 @@ module GeometricPrimitives
         tightenBVBounds!(cropped_bv, ball, tol=tol)
         return cropped_bv
     end
-end
+
+
+    # Cone Functions: ========================================================================================
+    function BoundingVolume(cone::Cone, R_min::Real, R_max::Real)
+    end
+
+    function isContained(cone::Cone, query_pt::Vector; include_boundary=true::Bool )
+    end
+
+    function isContained(bv::BoundingVolume, query_cone::Cone; include_boundary=true::Bool )
+    end
+
+    function isContained(cone::Cone, query_bv::BoundingVolume; include_boundary=true::Bool )
+    end
+
+    function intersects(bv::BoundingVolume, cone::Cone; include_boundary=true::Bool) 
+    end
+
+    function getIntersection(bv::BoundingVolume, cone::Cone) 
+    end
+end # submodule
+
