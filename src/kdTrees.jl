@@ -81,14 +81,14 @@ module kdTrees
 
     # Convention: use <= goes to the left, > goes to the right
     mutable struct kdNode{T, VDP<:Vector{DataPoint{T}}}
-        data::VDP
-        original_indices::Vector{Int64}
+        data::VDP                       # TODO: move to kdTree
+        original_indices::Vector{Int64} # TODO: move to kdTree
         is_leaf::Bool
         index_range::IndexRange
         split_dim::Integer
         split_val::Real
-        bv::BoundingVolume
-        bv_watertight::BoundingVolume
+        bv::BoundingVolume # TODO: make this field optional since non-watertight BV searches are expensive in high-dim
+        bv_watertight::BoundingVolume   # TODO: move to kdTree
         parent::Union{kdNode, Nothing}
         l_child::Union{kdNode, Nothing}
         r_child::Union{kdNode, Nothing}
@@ -421,17 +421,6 @@ module kdTrees
         end
     end
 
-    # Non-point search related functions
-    mutable struct SearchNode
-        search::Union{Bool, Nothing}
-        parent::Union{SearchNode, Nothing}
-        l_child::Union{SearchNode, Nothing}
-        r_child::Union{SearchNode, Nothing}
-
-        SearchNode() = new(nothing, nothing, nothing, nothing)
-
-        SearchNode(search::Bool, parent::Union{SearchNode, Nothing}, l_child::Union{SearchNode, Nothing}, r_child::Union{SearchNode, Nothing}) = new(search, parent, l_child, r_child)
-    end
 
     function initializeNodeList(index_search::Bool)
         return index_search == true ? IndexRange[] : kdNode[]
@@ -464,8 +453,22 @@ module kdTrees
         end
     end
 
+    # Advanced searching functions =================================================================
+    mutable struct SearchNode
+        search::Union{Bool, Nothing}
+        parent::Union{SearchNode, Nothing}
+        l_child::Union{SearchNode, Nothing}
+        r_child::Union{SearchNode, Nothing}
+
+        SearchNode() = new(nothing, nothing, nothing, nothing)
+
+        SearchNode(search::Bool, parent::Union{SearchNode, Nothing}, l_child::Union{SearchNode, Nothing}, r_child::Union{SearchNode, Nothing}) = new(search, parent, l_child, r_child)
+    end
+
     # Top level search-dispatch function
-    function search(tree::kdTree, query::SearchableGeometry; 
+    # TODO: Check the implications of using 'fully_contained' and 'include_boundary' given node's watertight bvs only include 
+    #       points on their lb boundaries (i.e. they do not include their ub boundaries).
+    function search(tree::kdTree, query::SearchableGeometry, search_node=nothing::Union{SearchNode, Nothing}; 
         include_boundary = true::Bool, 
               watertight = false::Bool,
          fully_contained = false::Bool, 
@@ -473,88 +476,91 @@ module kdTrees
              lazy_search = false::Bool )
 
         nodes = initializeNodeList(index_search)
-        search!(nodes, tree.root, query, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search)
-        if search_and_mark
-            return nodes, root_search_node
-        else
-            return nodes 
-        end
+        search!(nodes, tree.root, query, search_node, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, lazy_search=lazy_search)
     end
 
     # Bounding volume search
-    function search!(nodes, node::Union{kdNode, Nothing}, query_bv::BoundingVolume; 
+    function search!(nodes, node::Union{kdNode, Nothing}, query_bv::BoundingVolume, search_node=nothing::Union{SearchNode, Nothing}; 
         include_boundary = true::Bool,
               watertight = false::Bool,
          fully_contained = false::Bool,
             index_search = false::Bool,
              lazy_search = false::Bool )
 
-        if isnothing(node)
+        if isnothing(node) || (!isnothing(search_node) && search_node.search == false)
             return nothing
-        else 
-            node_bv = watertight ? node.bv_watertight : node.bv
-            cropped_query_bv = getIntersection(node_bv, query_bv)
+        end
 
-            if !cropped_query_bv.is_empty
-                if node.is_leaf
-                    if ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained
-                        addNode(nodes, node)
-                    end
+        l_search_node, r_search_node = isnothing(search_node) ? (nothing, nothing) : (search_node.l_child, search_node.r_child)
+        node_bv = watertight ? node.bv_watertight : node.bv
+        cropped_query_bv = getIntersection(node_bv, query_bv)
+
+        if !cropped_query_bv.is_empty
+            if node.is_leaf
+                if ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained
+                    addNode(nodes, node)
+                end
+            else
+                if lazy_search && ( ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained )
+                    addNode(nodes, node)
                 else
-                    if lazy_search && ( ( fully_contained && isContained(query_bv, node_bv, include_boundary=include_boundary) ) || !fully_contained )
-                        addNode(nodes, node)
-                    else
-                        if (include_boundary && cropped_query_bv.lb[node.split_dim] <= node.split_val ) || cropped_query_bv.lb[node.split_dim] < node.split_val
-                            search!(nodes, node.l_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
-                        end
+                    # TODO: make watertight searches more efficient by tightening the BV only in the splitting dir
+                    if (isnothing(l_search_node) || l_search_node.search == true) && 
+                        ( (include_boundary && cropped_query_bv.lb[node.split_dim] <= node.split_val ) || cropped_query_bv.lb[node.split_dim] < node.split_val )
+                        search!(nodes, node.l_child, cropped_query_bv, l_search_node, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                    end
 
-                        if (include_boundary && cropped_query_bv.ub[node.split_dim] >= node.split_val ) || cropped_query_bv.ub[node.split_dim] > node.split_val
-                            search!(nodes, node.r_child, cropped_query_bv, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
-                        end
+                    if (isnothing(r_search_node) || r_search_node.search == true) && 
+                        ( (include_boundary && cropped_query_bv.ub[node.split_dim] >= node.split_val ) || cropped_query_bv.ub[node.split_dim] > node.split_val )
+                        search!(nodes, node.r_child, cropped_query_bv, r_search_node, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
                     end
                 end
-            end # if BV is not empty
-        end # if isnothing(node)
+            end
+        end # if BV is not empty
     end # function
 
     # Ball search
-    function search!(nodes, node::Union{kdNode, Nothing}, query_ball::Ball;
+    function search!(nodes, node::Union{kdNode, Nothing}, query_ball::Ball, search_node=nothing::Union{SearchNode, Nothing};
         include_boundary = true::Bool,
               watertight = false::Bool,
          fully_contained = false::Bool,
             index_search = false::Bool,
              lazy_search = false::Bool )
 
-        if isnothing(node)
+        if isnothing(node) || (!isnothing(search_node) && search_node.search == false)
             return
-        else
-            node_bv = watertight ? node.bv_watertight : node.bv
-            cropped_query_bv = getIntersection(node_bv, query_ball)
+        end
 
-            if !cropped_query_bv.is_empty
-                if node.is_leaf
-                    if ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained
-                        addNode!(nodes, node)
-                    end
+        l_search_node, r_search_node = isnothing(search_node) ? (nothing, nothing) : (search_node.l_child, search_node.r_child)
+        node_bv = watertight ? node.bv_watertight : node.bv
+        cropped_query_bv = getIntersection(node_bv, query_ball)
+
+        if !cropped_query_bv.is_empty
+            if node.is_leaf
+                if ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained
+                    addNode!(nodes, node)
+                end
+            else
+                if lazy_search && ( ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained )
+                    addNode(nodes, node)
                 else
-                    if lazy_search && ( ( fully_contained && isContained(query_ball, node_bv, include_boundary=include_boundary) ) || !fully_contained )
-                        addNode(nodes, node)
-                    else
-                        if (include_boundary && cropped_query_bv.lb[node.split_dim] <= node.split_val ) || cropped_query_bv.lb[node.split_dim] < node.split_val
-                            search!(nodes, node.l_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
-                        end
+                    # TODO: make watertight searches more efficient by tightening the ball-BV bounds only in the split dir
+                    if (isnothing(l_search_node) || l_search_node.search == true) && 
+                        ( (include_boundary && cropped_query_bv.lb[node.split_dim] <= node.split_val ) || cropped_query_bv.lb[node.split_dim] < node.split_val )
+                        search!(nodes, node.l_child, query_ball, l_search_node, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
+                    end
 
-                        if (include_boundary && cropped_query_bv.ub[node.split_dim] >= node.split_val ) || cropped_query_bv.ub[node.split_dim] > node.split_val
-                            search!(nodes, node.r_child, ball, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
-                        end
+                    if (isnothing(r_search_node) || r_search_node.search == true) && 
+                        ( (include_boundary && cropped_query_bv.ub[node.split_dim] >= node.split_val ) || cropped_query_bv.ub[node.split_dim] > node.split_val )
+                        search!(nodes, node.r_child, query_ball, r_search_node, include_boundary=include_boundary, watertight=watertight, fully_contained=fully_contained, index_search=index_search)
                     end
                 end
-            end # If BV is not empty
-        end # if isnothing(node)
+            end
+        end # If BV is not empty
     end
 
     
-    # function search!(nodes, node::Union{kdNode, Nothing}, query_cone::Cone;
+    # function search!(nodes, node::Union{kdNode, Nothing}, query_cone::Cone, search_node=nothing::Union{SearchNode, Nothing};
     #     include_boundary = true::Bool,
     #           watertight = false::Bool,
     #      fully_contained = false::Bool,
@@ -563,12 +569,102 @@ module kdTrees
     # end
 
 
-    # function search!(nodes, node::Union{kdNode, Nothing}, query_plane::Hyperplane;
+    # function search!(nodes, node::Union{kdNode, Nothing}, query_plane::Hyperplane, search_node=nothing::Union{SearchNode, Nothing};
     #     include_boundary = true::Bool,
     #           watertight = false::Bool,
     #      fully_contained = false::Bool,
     #         index_search = false::Bool,
     #          lazy_search = false::Bool )
     # end
+
+    # Note: because of how Julia passes function arguments, this function cannot also
+    #       set node to nothing and have it persist outside this function. This function
+    #       can only "free" the descendants of the given node.
+    function freeDescendants!(node::SearchNode)
+        if isnothing(node)
+            return
+        end
+
+        if !isnothing(node.l_child)
+            freeDescendants!(node.l_child)
+            node.l_child = nothing
+        end
+
+        if !isnothing(node.r_child)
+            freeDescendants!(node.r_child)
+            node.r_child = nothing
+        end
+    end
+
+    # Note: Marking does not change the kd-tree or return anything, but does change the search tree markers.
+    #       It is ALWAYS a lazy search, and only marks nodes that are fully contained in the query geometry,
+    #       including their boundary.
+    # Other: the parent node in a SearchNode is set by the calling function.
+    function mark!(kd_node::Union{kdNode, Nothing}, query::SearchableGeometry, search_node=nothing::Union{SearchNode, Nothing}; 
+        watertight=false::Bool)
+
+        if isnothing(kd_node) || ( !isnothing(search_node) && search_node.search == false )
+            return search_node
+        end
+
+        # If this node has no intersection whatsoever with the query, return the search node unchanged
+        node_bv = watertight ? node.bv_watertight : node.bv
+        if !intersects(node_bv, query, include_boundary=true)
+            return search_node
+        # If this node's BV is fully contained in the query geometry, mark this node and return
+        elseif isContained(query, node_bv, include_boundary=true)
+            if isnothing(search_node)
+                return SearchNode(false, nothing, nothing, nothing)
+            else
+                search_node.search = false
+                freeDescendants!(search_node)
+                return search_node
+            end
+        else # The query and the node's BV have a non-zero intersection
+
+            # If this node's BV is not fully contained by the query geom, check its children (recurse)
+            if kd_node.is_leaf # Cannot mark false or true; also should not have any descendants
+                return nothing
+            end
+
+            # For non-leaf nodes:
+            l_search_node, r_search_node = isnothing(search_node) ? (nothing, nothing) : (search_node.l_child, search_node.r_child)
+            
+            l_search_node = mark!(kd_node.l_child, query, l_search_node, watertight=watertight)
+            r_search_node = mark!(kd_node.r_child, query, r_search_node, watertight=watertight)
+            search_val = ( isnothing(l_search_node) ? true : l_search_node.search ) || ( isnothing(r_search_node) ? true : r_search_node.search ) 
+            
+            # If both children are marked false, free them and mark this node false
+            if search_val == false 
+                freeDescendants!(l_search_node)
+                freeDescendants!(r_search_node)
+                return SearchNode(false, nothing, nothing, nothing)
+            end
+
+            # Case 1: At least one child node either DNE or is marked true
+            if !isnothing(l_search_node) || !isnothing(r_search_node)
+                if isnothing(search_node)
+                    search_node = SearchNode(search_val, nothing, l_search_node, r_search_node)
+                else # If we get here, search_node.search = true, and only its descendants (possibly) changed
+                    search_node.l_child = l_search_node
+                    search_node.r_child = r_search_node
+                end
+
+                if !isnothing(search_node.l_child)
+                    search_node.l_child.parent = search_node 
+                end
+                if !isnothing(search_node.r_child)
+                    search_node.r_child.parent = search_node 
+                end
+                return search_node
+            else # Both child nodes DNE (this should never happen)
+                if !isnothing(search_node) 
+                    freeDescendants!(search_node)
+                    search_node = nothing 
+                end
+                return search_node # = return nothing
+            end
+        end # if isContained/intersects the bv
+    end
 
 end # kdTree module
