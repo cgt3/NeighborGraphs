@@ -67,7 +67,7 @@ module GeometricPrimitives
         is_active::Vector{Bool}
         embedding_dim::Integer
 
-        function Ball(center::VecReal, radius::Real; p=2::Real, active_dim=true::Bool, indices=[eachindex(center)...]::Vector{Int64}) where {T_real<:Real, VecReal<:Vector{T_real}}
+        function Ball(center::VecReal, radius::Real; p=2::Real, active_indices=true::Bool, indices=[eachindex(center)...]::Vector{Int64}) where {T_real<:Real, VecReal<:Vector{T_real}}
             if radius < 0
                 throw("GeometricPrimitives.Ball: Cannot construct ball with negative radius.")
             elseif radius == 0
@@ -75,21 +75,21 @@ module GeometricPrimitives
             end
 
             unique_indices=unique(indices)
-            if active_dim
+            if active_indices
                 is_active = zeros(Bool, length(center))
-                is_active[unique_indices] = true
+                is_active[unique_indices] .= true
     
                 all_dim = [eachindex(center)...]
-                inactive_dim = all_dim[!is_active]
-                dim = length(unique_indices)
+                inactive_dim = all_dim[is_active .== false]
+                dim = sum(is_active)
                 return new(center, radius, p, dim, unique_indices, inactive_dim, is_active, length(center))
             else
                 is_active = ones(Bool, length(center))
-                is_active[unique_indices] = false
+                is_active[unique_indices] .= false
 
                 all_dim = [eachindex(center)...]
                 active_dim = all_dim[is_active]
-                dim = length(unique_indices)
+                dim = sum(is_active)
                 return new(center, radius, p, dim, active_dim, unique_indices, is_active, length(center))
             end
         end
