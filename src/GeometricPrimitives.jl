@@ -216,6 +216,10 @@ module GeometricPrimitives
     end
 
     function isContained(ball::Ball, query_pt::Pt; include_boundary=true::Bool, tol=DEFAULT_BV_POINT_TOL) where {T<:Real, Pt<:Vector{T}}
+        if length(query_pt) != ball.embedding_dim
+            throw("GeometricPrimitive.isContained(Ball,pt): Point dim(=$(length(query_pt))) does not match ball embedding dim(=$(ball.embedding_dim))")
+        end
+        
         if ball.dim < length(ball.center) # The ball does not have full dimension
             for d_fixed in ball.inactive_dim
                 if abs(query_pt[d_fixed] - ball.center[d_fixed]) > tol
