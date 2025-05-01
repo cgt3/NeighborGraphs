@@ -70,6 +70,8 @@ module GeometricPrimitives
         function Ball(center::VecReal, radius::Real; p=2::Real, active_dim=true::Bool, indices=[eachindex(center)...]::Vector{Int64}) where {T_real<:Real, VecReal<:Vector{T_real}}
             if radius < 0
                 throw("GeometricPrimitives.Ball: Cannot construct ball with negative radius.")
+            elseif radius == 0
+                return new(center, radius, p, 0, [], [eachindex(center)...], zeros(Bool, length(center)), length(center))
             end
 
             unique_indices=unique(indices)
