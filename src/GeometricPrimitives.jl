@@ -19,6 +19,44 @@ module GeometricPrimitives
 
     abstract type SearchableGeometry end
 
+    struct BoundingVolume <: SearchableGeometry
+        lb::Vector
+        ub::Vector
+        is_empty::Bool
+        dim::Integer
+        active_dim::Vector
+        inactive_dim::Vector
+        is_active::Vector{Bool}
+
+        # For invalid/emtpy BV's (note an empty BV differs from a non-empty BV with dimension 0 (a point))
+        function BoundingVolume()
+            return new([Inf], [-Inf], true, 0, [], [], Bool[])
+        end
+
+        function BoundingVolume(lb::Vector{T1}, ub::Vector{T2}; tol=DEFAULT_BV_POINT_TOL::Real) where {T1<:Real, T2<:Real}
+            if length(lb) != length(ub)
+                throw("GeometricPrimitives.BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions")
+            elseif any(lb .> ub)
+                throw("GeometricPrimitives.BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)")
+            end
+
+            dim = length(lb)
+            is_active = ones(Bool, length(lb))
+            for d in eachindex(lb)
+                if abs(lb[d] - ub[d]) < tol
+                    dim -= 1
+                    is_active[d] = false
+                end
+            end
+            all_dim = [eachindex(lb)...]
+            active_dim   = all_dim[is_active]
+            inactive_dim = all_dim[ is_active .!= true ] # Cannot do !x it seems
+
+            return new(lb, ub, false, dim, active_dim, inactive_dim, is_active)
+        end
+    end
+
+
     struct Ball <: SearchableGeometry
         center::Vector
         radius::Real
@@ -29,7 +67,7 @@ module GeometricPrimitives
         is_active::Vector{Bool}
         embedding_dim::Integer
 
-        function Ball(center::VecReal, radius::Real; p=2::Real, active_dim=true::Bool, indices=(active_dim ? [eachindex(center)...] : VecInt[])::VecInt) where {T_real<:Real, T_int<:Integer, VecReal<:Vector{T_real}, VecInt<:Vector{T_int}}
+        function Ball(center::VecReal, radius::Real; p=2::Real, active_dim=true::Bool, indices=[eachindex(center)...]::Vector{Int64}) where {T_real<:Real, VecReal<:Vector{T_real}}
             if radius < 0
                 throw("GeometricPrimitives.Ball: Cannot construct ball with negative radius.")
             end
@@ -74,43 +112,8 @@ module GeometricPrimitives
     struct Hyperplane <: SearchableGeometry end
     struct Simplex end
 
-    struct BoundingVolume <: SearchableGeometry
-        lb::Vector
-        ub::Vector
-        is_empty::Bool
-        dim::Integer
-        active_dim::Vector
-        inactive_dim::Vector
-        is_active::Vector{Bool}
 
-        # For invalid/emtpy BV's (note an empty BV differs from a non-empty BV with dimension 0 (a point))
-        function BoundingVolume()
-            return new([Inf], [-Inf], true, 0, [], [], Bool[])
-        end
-
-        function BoundingVolume(lb::Vector{T1}, ub::Vector{T2}; tol=DEFAULT_BV_POINT_TOL::Real) where {T1<:Real, T2<:Real}
-            if length(lb) != length(ub)
-                throw("GeometricPrimitives.BoundingVolume: lb (length=$(length(lb))) and ub (length=$(length(lb))) points have different dimensions")
-            elseif any(lb .> ub)
-                throw("GeometricPrimitives.BoundingVolume: Cannot construct bounding volume with lb (=$lb) > ub (=$ub)")
-            end
-
-            dim = length(lb)
-            is_active = ones(Bool, length(lb))
-            for d in eachindex(lb)
-                if abs(lb[d] - ub[d]) < tol
-                    dim -= 1
-                    is_active[d] = false
-                end
-            end
-            all_dim = [eachindex(lb)...]
-            active_dim   = all_dim[is_active]
-            inactive_dim = all_dim[ is_active .!= true ] # Cannot do !x it seems
-
-            return new(lb, ub, false, dim, active_dim, inactive_dim, is_active)
-        end
-    end
-
+    # BoundingVolume functions ====================================================================
     import Base.==
     function Base.:(==)(bv1::BoundingVolume, bv2::BoundingVolume)
         return           all(bv1.lb .== bv2.lb) &&
