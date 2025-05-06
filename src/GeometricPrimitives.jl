@@ -17,6 +17,25 @@ module GeometricPrimitives
 
     const DEFAULT_BV_POINT_TOL = 1e-15
 
+    # TODO: allow sparse vectors where vectors are allowed
+
+    struct Line 
+        dir::Vector
+        source::Vector
+
+        function Line(dir, source) 
+            if length(dir) != length(source)
+                throw("GeometricPrimitives.Line: Direction and point vector have different dimensions.")
+            end
+
+            return new(dir / norm(dir), source)
+        end
+    end
+
+    function (::Line)(s::Real)
+        return source + dir*s
+    end
+
     abstract type SearchableGeometry end
 
     struct BoundingVolume <: SearchableGeometry
@@ -95,9 +114,29 @@ module GeometricPrimitives
         end
     end # struct
 
+    struct Hyperplane <: SearchableGeometry 
+        point::Vector
+        n::Vector
+        dim::Integer
+        embedding_dim::Integer
+        active_dim::Vector
+        inactive_dim::Vector
+        is_active::Vector{Bool}
+
+        function Hyperplane(point::Vector, n::Vector)
+            if length(point) != length(n)
+                throw("GeometricPrimitives.Hyperplane: Point and normal vector do not have matching dimensions.")
+            end
+
+            all_indices = [eachindex(point)]
+            is_active = n .!= 0
+            return new(point, n ./ norm(n), sum(n .!= 0), length(point), all_indices[is_active], all_indices[n .== 0], is_active) 
+        end
+    end
+
     struct Cone <: SearchableGeometry
         vertex::Vector 
-        axis::Vector 
+        axis::Vector
         slope::Real
 
         function Cone(vertex::Vector, axis::Vector, slope::Real)
@@ -106,12 +145,10 @@ module GeometricPrimitives
             elseif slope < 0 
                 throw("GeometricPrimitives.Cone: Cannot construct cone with negative slope.")
             end
-            return new(vertex, axis, slope)
+            return new(vertex, axis ./ norm(axis), slope)
         end
     end
 
-    # TODO: Finish these classes
-    struct Hyperplane <: SearchableGeometry end
     struct Simplex end
 
 
@@ -127,7 +164,7 @@ module GeometricPrimitives
                   all(bv1.is_active .== bv2.is_active)    
     end
 
-
+    # TODO: do furthest/closest generalize to all lp-norms with p > 1?
     function getClosestPoint(bv::BoundingVolume, query_pt::Vector)
         closest_pt = copy(query_pt)
 
@@ -220,7 +257,7 @@ module GeometricPrimitives
             throw("GeometricPrimitive.isContained(Ball,pt): Point dim(=$(length(query_pt))) does not match ball embedding dim(=$(ball.embedding_dim))")
         end
         
-        if ball.dim < length(ball.center) # The ball does not have full dimension
+        if ball.dim < ball.embedding_dim # The ball does not have full dimension
             for d_fixed in ball.inactive_dim
                 if abs(query_pt[d_fixed] - ball.center[d_fixed]) > tol
                     return false
@@ -240,45 +277,25 @@ module GeometricPrimitives
 
     function isContained(ball::Ball, query_bv::BoundingVolume; include_boundary=true::Bool)
         furthest_pt = getFurthestPoint(query_bv, ball.center)
-        R_max = norm(furthest_pt, ball.p)
-        if (  include_boundary && R_max <= ball.radius ) ||
-           ( !include_boundary && R_max <  ball.radius )
-            return true
-        end
-
-        return false
+        return isContained(ball, furthest_pt, include_boundary=include_boundary)
     end
 
     function intersects(bv::BoundingVolume, ball::Ball; include_boundary=true::Bool, tol=DEFAULT_BV_POINT_TOL::Real)
-        bv_ball = BoundingVolume(ball, tol=tol)
-        cropped_bv = getIntersection(bv, bv_ball, tol=tol)
-
         # First, do the easy checks against the ball's BV:
-        if cropped_bv.is_empty 
+        if !intersects(bv, BoundingVolume(ball, tol=tol), include_boundary=include_boundary)
             # The two are completely disjoint
             return false
-        elseif isContained(bv, ball, include_boundary=include_boundary) 
-            # The ball is completely contained by the BV
-            # Note this case also covers the special case where the ball's radius is zero
-            return true
-        end
-
-        # Second, check if the center is contained in the bv
-        if isContained(bv, ball.center, include_boundary=include_boundary)
+        elseif isContained(bv, ball.center, include_boundary=include_boundary)
             return true
         end
         
-        # If the easy checks fail, check against the ball itself:
-        #  Find the point in the  BV closest to the ball's center
-        #  and check if it is within the ball.
-        closest_pt = getClosestPoint(bv, ball.center)
-        R_closest_pt = norm(closest_pt .- ball.center, ball.p)
-        if (  include_boundary && R_closest_pt <= ball.radius ) ||
-           ( !include_boundary && R_closest_pt <  ball.radius )
-            return true
-        end
+        # Note: the below check could catch all of the above cases but its use of the
+        #       lp-norm makes it more expensive. The above checks are to avoid having
+        #       to compute norms.
 
-        return false
+        # If the easy checks fail, check against the ball itself
+        closest_pt = getClosestPoint(bv, ball.center)
+        return isContained(ball, closest_pt, include_boundary=include_boundary)
     end
 
     function getReducedDimBall(removal_dim::Integer, x_d::Real, ball::Ball)
@@ -398,30 +415,174 @@ module GeometricPrimitives
         return cropped_bv
     end
 
+    # Hyperplane Functions: ==================================================================================
+    # TODO: this functions is not guaranteed to have a unique output; provide a means to break ties
+    function getClosestPoint(bv::BoundingVolume, query_plane::Hyperplane)
+    end
+
+    # TODO: this functions is not guaranteed to have a unique output; provide a means to break ties
+    function getFurthestPoint(bv::BoundingVolume, query_plane::Hyperplane)
+    end
+
+    function isContained(plane::Hyperplane, query_pt::Vector)
+    end
+
+    # Note: hyperplanes are unbounded geometries, so isContained(bv, query_plane) is ill-defined
+    function isContained(plane::Hyperplane, query_bv::BoundingVolume)
+    end
+
+
+    function intersects(bv::BoundingVolume, query_plane::Hyperplane; include_boundary=true::Bool)
+    end
+
+    function getIntersection(bv::BoundngVolume, query_plane::Hyperplane; tol=DEFAULT_BV_POINT_TOL::Real)
+    end
 
     # Cone Functions: ========================================================================================
-    function getUpperBoundLine(cone::Cone, dim::Integer)
+    # TODO: this functions is not guaranteed to have a unique output; provide a means to break ties
+    function getClosestPoint(bv::BoundingVolume, query_line::Line)
+        # TODO: Finish
     end
 
-    function getLowerBoundLine(cone::Cone, dim::Integer)
+    # TODO: this functions is not guaranteed to have a unique output; provide a means to break ties
+    function getFurthestPoint(bv::BoundingVolume, query_line::Line)
+        # TODO: Finish
     end
 
-    function BoundingVolume(cone::Cone, R_min::Real, R_max::Real)
+    function getMajorRadius(cone::Cone, p::Vector) 
+        return (cone.vertex .- p)' * cone.axis
     end
 
+    function getRadii(cone::Cone, p::Vector) 
+        dist2Vertex = cone.vertex .- p
+        R = dist2Vertex' * cone.axis
+        r = norm( dist2Vertex .- R*cone.axis )
+
+        return R, r
+    end
+
+    function getConeBounds(cone::Cone)
+        if cone.slope == 0
+            return Line(cone.vertex, cone.axis)
+        end
+
+        ub_scalings = similar(cone.vertex)
+        lb_scalings = similar(cone.vertex)
+        e_i = spzeros(length(cone.vertex))
+        for i in eachindex(cone.vertex)
+            e_i[dim] = 1
+            if abs(e_i' * cone.axis) == 1
+                lb_scalings[i] = 0.0
+                ub_scalings[i] = 0.0
+            else
+                u0 = cone.vertex + e_i
+                R0, r = getRadii(cone, u0)
+
+                R_bound = r / cone.slope
+                u_ub_i = u0[i] + (R_bound - R0)*cone.axis[i]
+                u_lb_i = (cone.vertex - e_i)[i] + (R_bound + R0)*cone.axis[i]
+
+                lb_scalings[i] = ( u_lb_i - cone.vertex[i] ) / R_bound
+                ub_scalings[i] = ( u_ub_i - cone.vertex[i] ) / R_bound
+            end
+        end
+        
+        return Line(cone.vertex, lb_scalings), Line(cone.vertex, ub_scalings)
+    end
+
+    function getBoundingRadii(cone::Cone, query_bv::BoundingVolume)
+        closest_R_pt  = getClosestPoint(query_bv, Hyperplane(cone.vertex, cone.axis))
+        furthest_R_pt = getFurthestPoint(bv, Hyperplane(cone.vertex, cone.axis))
+        return getMajorRadius(cone, closest_R_pt), getMajorRadius(cone, furthest_R_pt)
+    end
+
+    function BoundingVolume(ub_func, lb_func, s1::Real, s2::Real; tol=DEFAULT_BV_POINT_TOL::Real)
+        lb1 = lb_func(s1)
+        ub1 = ub_func(s1)
+
+        lb2 = lb_func(s2)
+        ub2 = ub_func(s2)
+
+        return BoundingVolume(min.(lb1, lb2), max.(ub1, ub2), tol=tol)
+    end
+
+    function BoundingVolume(cone::Cone, R_max::Real, R_min=0::Real; tol=DEFAULT_BV_POINT_TOL::Real)
+        if R_max < R_min 
+            throw("GeometricPrimitives.BoundingVolume(Cone): R_max cannot be < R_min")
+        end
+
+        if R_min < 0
+            throw("GeometricPrimitives.BoundingVolume(Cone): R_min and R_max do no satisfy 0 <= R_min <= R_max")
+        end
+        return BoundingVolume(cone_ub, cone_lb, R_max, R_min, tol=tol)
+    end
+
+    # Note: Cones are unbounded geometries, so isContained(bv, cone) is ill-defined
     function isContained(cone::Cone, query_pt::Vector; include_boundary=true::Bool )
+        R, r = getRadii(cone, query_pt)
+        
+        if include_boundary
+            return R >= 0 ? r <= cone.slope*R : false
+        else
+            return R > 0 ? r < cone.slope*R : false
+        end
     end
 
-    function isContained(bv::BoundingVolume, query_cone::Cone; include_boundary=true::Bool )
-    end
 
+    # TODO: this function is incomplete
     function isContained(cone::Cone, query_bv::BoundingVolume; include_boundary=true::Bool )
+
+        # Cyclindrical BV condition: Check the cylindrical BV defined by R_min and r_max:
+        # TODO: what is there are two or more points tied to be closest point? In the cases
+        # of two points we need the negative one here.
+        smallest_R_pt = getClosestPoint(bv, Hyperplane(cone.vertex, cone.axis))
+        R_min = getMajorRadius(cone, smallest_R_pt)
+        if R_min < 0
+            return false
+        end
+
+        # If R_min = 0, the only way a BV can fit in the cone is if it:
+        #   1) Is a line that passes throught the cone's vertex
+        #   2) Has a corner at the vertex and the cone has a slope
+        #      corresponding to 45deg or more
+
+        furthest_pt = getFurthestPoint(query_bv, Line(cone.vertex, cone.axis))
+        _, r_max = getRadii(cone, furthest_pt)
+        
+
+        # Note: the cylindrical BV condition is a strong condition than induced by the
+        #       cone itself: it will reject some BV's that are in fact inside the cone. 
+        #       However, if it states a BV is in the cone, that BV must be in the cone.
+        if (include_boundary && r_max <= cone.slope*R_min) || (r_max < cone.slope*R_min)
+            return true
+        end
+        return isContained(cone, bounding_pt, include_boundary=include_boundary)
     end
 
+    # TODO: this function is not fully defined since getClosestPoint can return duplicates
     function intersects(bv::BoundingVolume, cone::Cone; include_boundary=true::Bool) 
+        closest_pt = getClosestPoint(query_bv, Line(cone.vertex, cone.axis))
+        return isContained(cone, closest_pt, include_boundary=include_boundary)
     end
 
-    function getIntersection(bv::BoundingVolume, cone::Cone) 
+    function getIntersection(bv::BoundingVolume, cone::Cone; tol=DEFAULT_BV_POINT_TOL::Real) 
+        intersection = bv
+        cone_lbs, cone_ubs = getConeBounds(cone)
+        while !intersection.is_empty
+            R_min, R_max = getBoundingRadii(cone, intersection)
+            bv_cone = BoundingVolume(cone_ub, cone_lb, R_max, R_min, tol=tol)
+
+            old_intersection = intersection 
+            intersection = getIntersection(bv_cone, bv_cone, tol=tol)
+
+            # TODO: Should have a tolerance instead of strict '=='?
+            if old_intersection == intersection 
+                return intersection 
+            end
+        end
+
+        # If we reach here intersection is empty
+        return intersection
     end
 end # submodule
 
