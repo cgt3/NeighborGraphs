@@ -58,6 +58,12 @@ abstract type NeighborRule end # ===============================================
 
 # TODO: add help dialogs for each kind of graph that explain their parameters
 
+struct FNG <: NeighborRule 
+    p::Real
+    include_duplicates::Bool
+end
+FNG(; p = 2::Integer, include_duplicates=false::Bool) = FNG(p, include_duplicates)
+
 struct NNG <: NeighborRule 
     p::Real
     include_duplicates::Bool
@@ -96,6 +102,29 @@ struct SemiYao <:NeighborRule end
 struct SVM <: NeighborRule end
 
 # TODO: Multiclass Neighbor Rules: =====================
+
+
+# Other data structures:
+struct Shadow <: GeometricPrimitives.SearchableGeometry 
+    nbr_rule::NeighborRule
+    x::Vector
+    nbr::Vector
+end
+
+# TODO: Add these for every obstruction based neighbor rule:
+# function (::Shadow)(R::Real)
+# end
+
+# function isContained(shadow::Shadow, query_pt::Vector; include_boundary=true::Bool)
+# end
+
+
+# function isContained(bv::BoundingVolume, query_shadow::Shadow; include_boundary=true::Bool)
+# end
+
+
+# function isContained(shadow::Shadow, query_bv::BoundingVolume; include_boundary=true::Bool)
+# end
 
 
 # For building graphs
